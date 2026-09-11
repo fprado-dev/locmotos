@@ -27,6 +27,7 @@ export function createAdminClient(): SupabaseClient {
  */
 export async function createAuthenticatedClient(options?: {
   appMetadata?: Record<string, unknown>;
+  userMetadata?: Record<string, unknown>;
 }): Promise<{
   client: SupabaseClient;
   userId: string;
@@ -44,6 +45,9 @@ export async function createAuthenticatedClient(options?: {
     // Dados de autorização vão em app_metadata, nunca em user_metadata:
     // user_metadata é editável pelo próprio usuário e não serve para RLS.
     app_metadata: options?.appMetadata,
+    // O que a pessoa digitou no cadastro — é daqui que o trigger de
+    // provisionamento lê o nome da locadora.
+    user_metadata: options?.userMetadata,
   });
   if (error) throw error;
 
