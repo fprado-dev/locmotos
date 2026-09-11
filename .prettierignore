@@ -3,3 +3,6 @@ node_modules/
 pnpm-lock.yaml
 supabase/.temp/
 coverage/
+
+# Protótipos do handoff de design, guardados como vieram.
+docs/design/
