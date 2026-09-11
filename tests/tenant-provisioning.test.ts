@@ -61,7 +61,7 @@ describe("cadastro de locadora", () => {
     const manager = await signUp("Motos do Zé");
 
     const vehicle = await createVehicle(manager.client, cg160);
-    const vehicles = await listVehicles(manager.client);
+    const { vehicles } = await listVehicles(manager.client);
 
     expect(vehicle.tenantId).toBe(manager.tenantId);
     expect(vehicles.map((each) => each.id)).toEqual([vehicle.id]);
@@ -72,7 +72,7 @@ describe("cadastro de locadora", () => {
     const maria = await signUp("Motos da Maria");
     await createVehicle(zé.client, cg160);
 
-    expect(await listVehicles(maria.client)).toEqual([]);
+    expect((await listVehicles(maria.client)).vehicles).toEqual([]);
     expect(zé.tenantId).not.toBe(maria.tenantId);
   });
 });

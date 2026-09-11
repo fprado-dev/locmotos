@@ -1,16 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
+import { STATUS_LABELS } from "@/app/ui";
 import type { VehicleStatus } from "@/modules/fleet";
 import { changeVehicleStatus, type FormState } from "./actions";
-
-/** O nome de cada situação na tela. Vocabulário de interface, não de banco. */
-const LABELS: Record<VehicleStatus, string> = {
-  available: "Disponível",
-  reserved: "Reservada",
-  maintenance: "Em manutenção",
-  unavailable: "Indisponível",
-};
 
 const initialState: FormState = {};
 
@@ -44,7 +37,7 @@ export function StatusSelect({
         onChange={(event) => event.currentTarget.form?.requestSubmit()}
         className="rounded border border-zinc-300 px-2 py-1 text-sm disabled:opacity-50 dark:border-zinc-700"
       >
-        {Object.entries(LABELS).map(([value, label]) => (
+        {Object.entries(STATUS_LABELS).map(([value, label]) => (
           <option key={value} value={value}>
             {label}
           </option>
