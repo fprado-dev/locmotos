@@ -458,3 +458,70 @@ export async function signedFileUrl(
   if (error) throw error;
   return data?.signedUrl ?? null;
 }
+
+const MS_PER_DAY = 86_400_000;
+
+/** Quantos dias antes do vencimento o licenciamento começa a incomodar. */
+export const LICENSING_WARNING_DAYS = 60;
+
+// Dia do calendário como número, para subtrair sem fuso horário no meio: no
+// Brasil, meia-noite UTC é ontem às 21h, e comparar instantes faria "vence
+// hoje" virar "vencido".
+function calendarDay(moment: Date): number {
+  return Math.floor(
+    Date.UTC(moment.getFullYear(), moment.getMonth(), moment.getDate()) /
+      MS_PER_DAY,
+  );
+}
+
+// `date` do Postgres chega como "YYYY-MM-DD": é dia de calendário, não
+// instante, e passar isso por `new Date()` reintroduz o fuso que a linha acima
+// tirou.
+function calendarDayOf(date: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / MS_PER_DAY);
+}
+
+/**
+ * Há quantos dias o veículo está sem locação.
+ *
+ * Derivado em leitura, sem coluna: um contador materializado desincroniza e
+ * mente justamente no dia em que o gestor confia nele.
+ *
+ * Enquanto o módulo de Locações não existir, `since` é a data de cadastro —
+ * uma moto que nunca foi alugada está parada desde que entrou na frota. Quando
+ * Locações existir, passa a ser a data da última devolução, e só o argumento
+ * muda.
+ */
+export function daysWithoutRental(since: string, today = new Date()): number {
+  return calendarDay(today) - calendarDay(new Date(since));
+}
+
+/** Vencido, vencendo, ou nada a dizer. */
+export type LicensingAlert = "overdue" | "due-soon";
+
+/**
+ * O que a lista precisa gritar sobre o licenciamento deste veículo.
+ *
+ * Vencido é mais urgente que vencendo, e os dois aparecem: multa não deixa de
+ * existir por o prazo já ter passado.
+ */
+export function licensingAlert(
+  dueDate: string | null,
+  today = new Date(),
+): LicensingAlert | null {
+  if (!dueDate) return null;
+
+  const days = calendarDayOf(dueDate) - calendarDay(today);
+  if (days < 0) return "overdue";
+
+  return days <= LICENSING_WARNING_DAYS ? "due-soon" : null;
+}
+
+/** Quantos dias faltam para o licenciamento vencer. Negativo já venceu. */
+export function daysUntilLicensing(
+  dueDate: string,
+  today = new Date(),
+): number {
+  return calendarDayOf(dueDate) - calendarDay(today);
+}

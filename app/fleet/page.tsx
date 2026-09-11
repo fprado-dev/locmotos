@@ -3,6 +3,9 @@ import { signOut } from "@/app/(auth)/actions";
 import { buttonClass, fieldClass, STATUS_LABELS } from "@/app/ui";
 import { createClient } from "@/lib/supabase/server";
 import {
+  daysUntilLicensing,
+  daysWithoutRental,
+  licensingAlert,
   listVehicles,
   VEHICLE_STATUSES,
   type VehicleFilters,
@@ -39,6 +42,33 @@ function pageHref(filters: VehicleFilters, page: number): string {
   }
 
   return `/fleet?${query}`;
+}
+
+/**
+ * O aviso de licenciamento, quando há o que avisar.
+ *
+ * Vencido em vermelho, vencendo em âmbar — e a cor não carrega a informação
+ * sozinha: o texto diz qual é qual.
+ */
+function LicensingBadge({ dueDate }: { dueDate: string | null }) {
+  const alert = licensingAlert(dueDate);
+  if (!alert || !dueDate) return null;
+
+  const days = daysUntilLicensing(dueDate);
+
+  return (
+    <span
+      className={
+        alert === "overdue"
+          ? "rounded bg-red-100 px-2 py-0.5 text-xs text-red-800 dark:bg-red-950 dark:text-red-200"
+          : "rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+      }
+    >
+      {alert === "overdue"
+        ? `Licenciamento vencido há ${-days} d`
+        : `Licenciamento vence em ${days} d`}
+    </span>
+  );
 }
 
 export default async function FleetPage({
@@ -176,6 +206,10 @@ export default async function FleetPage({
               {manyTenants && (
                 <span className="text-zinc-500">{vehicle.tenantName}</span>
               )}
+              <span className="text-zinc-500">
+                parada há {daysWithoutRental(vehicle.createdAt)} d
+              </span>
+              <LicensingBadge dueDate={vehicle.licensingDueDate} />
               <StatusSelect id={vehicle.id} status={vehicle.status} />
             </li>
           ))}
