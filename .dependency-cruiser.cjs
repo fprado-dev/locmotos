@@ -49,6 +49,8 @@ module.exports = {
           "\\.d\\.ts$",
           "(^|/)tsconfig\\.json$",
           "(^|/)(next|postcss|vitest)\\.config\\.(js|cjs|mjs|ts)$",
+          // Convenções do App Router: quem importa é o Next, não o código.
+          "^app/.*(layout|page|route|loading|error|not-found)\\.tsx?$",
         ],
       },
       to: {},

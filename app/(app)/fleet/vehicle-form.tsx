@@ -1,11 +1,14 @@
 "use client";
 
 import { useActionState } from "react";
-import { buttonClass, fieldClass } from "@/app/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import type { Vehicle } from "@/modules/fleet";
 import { addVehicle, editVehicle, type FormState } from "./actions";
 
-/** Um campo do formulário: rótulo em cima, input embaixo. */
+/** Um campo do formulário: rótulo em cima, campo embaixo. */
 function Field({
   name,
   label,
@@ -13,6 +16,7 @@ function Field({
   required = false,
   step,
   defaultValue,
+  className,
 }: {
   name: string;
   label: string;
@@ -20,26 +24,28 @@ function Field({
   required?: boolean;
   step?: string;
   defaultValue?: string;
+  className?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-zinc-600 dark:text-zinc-400">
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={name}>
         {label}
         {required && " *"}
-      </span>
-      <input
+      </Label>
+      <Input
+        id={name}
         name={name}
         type={type}
         step={step}
         required={required}
         defaultValue={defaultValue}
-        className={fieldClass}
+        className={className}
       />
-    </label>
+    </div>
   );
 }
 
-/** Número e data chegam do domínio; o input só entende texto. */
+/** Número e data chegam do domínio; o campo só entende texto. */
 function value(field: string | number | null | undefined): string | undefined {
   return field === null || field === undefined ? undefined : String(field);
 }
@@ -65,17 +71,18 @@ export function VehicleForm({ vehicle }: { vehicle?: Vehicle }) {
       {vehicle && <input type="hidden" name="id" value={vehicle.id} />}
 
       {state.error && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-sm text-destructive">
           {state.error}
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 xl:grid-cols-4">
         <Field
           name="plate"
           label="Placa"
           required
           defaultValue={vehicle?.plate}
+          className="font-mono uppercase"
         />
         <Field
           name="brand"
@@ -107,11 +114,13 @@ export function VehicleForm({ vehicle }: { vehicle?: Vehicle }) {
           name="chassis"
           label="Chassi"
           defaultValue={value(vehicle?.chassis)}
+          className="font-mono"
         />
         <Field
           name="renavam"
           label="Renavam"
           defaultValue={value(vehicle?.renavam)}
+          className="font-mono"
         />
         <Field
           name="licensingDueDate"
@@ -148,21 +157,17 @@ export function VehicleForm({ vehicle }: { vehicle?: Vehicle }) {
         />
       </div>
 
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">Observações</span>
-        <textarea
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="notes">Observações</Label>
+        <Textarea
+          id="notes"
           name="notes"
           rows={2}
           defaultValue={value(vehicle?.notes)}
-          className={fieldClass}
         />
-      </label>
+      </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className={`${buttonClass} self-start disabled:opacity-50`}
-      >
+      <Button type="submit" size="lg" disabled={pending} className="self-start">
         {vehicle
           ? pending
             ? "Salvando…"
@@ -170,7 +175,7 @@ export function VehicleForm({ vehicle }: { vehicle?: Vehicle }) {
           : pending
             ? "Cadastrando…"
             : "Cadastrar"}
-      </button>
+      </Button>
     </form>
   );
 }

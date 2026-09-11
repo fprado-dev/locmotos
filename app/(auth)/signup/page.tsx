@@ -1,5 +1,14 @@
 import Link from "next/link";
-import { buttonClass, fieldClass } from "@/app/ui";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { signUp } from "../actions";
 
 export default async function SignUpPage({
@@ -8,38 +17,55 @@ export default async function SignUpPage({
   const { enviado } = await searchParams;
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-col gap-6 p-8">
-      <h1 className="text-2xl font-semibold">Cadastrar locadora</h1>
+    <Card className="w-full max-w-sm">
+      <CardHeader>
+        <CardTitle className="text-xl">Cadastrar locadora</CardTitle>
+        <CardDescription>
+          A locadora nasce junto com o seu acesso. Os dados dela ficam
+          invisíveis para qualquer outra.
+        </CardDescription>
+      </CardHeader>
 
-      {enviado ? (
-        <p>
-          Enviamos um link para o seu e-mail. Abra no mesmo navegador em que
-          pediu.
-        </p>
-      ) : (
-        <form action={signUp} className="flex flex-col gap-3">
-          <input
-            name="tenantName"
-            placeholder="Nome da locadora"
-            className={fieldClass}
-            required
-          />
-          <input
-            name="email"
-            type="email"
-            placeholder="seu@email.com"
-            className={fieldClass}
-            required
-          />
-          <button type="submit" className={buttonClass}>
-            Criar minha locadora
-          </button>
-        </form>
-      )}
+      <CardContent className="flex flex-col gap-4">
+        {enviado ? (
+          <p className="text-sm text-muted-foreground">
+            Enviamos um link para o seu e-mail. Abra no mesmo navegador em que
+            pediu.
+          </p>
+        ) : (
+          <form action={signUp} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tenantName">Nome da locadora</Label>
+              <Input
+                id="tenantName"
+                name="tenantName"
+                placeholder="Fast Motos"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">E-mail</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                placeholder="seu@email.com"
+                required
+              />
+            </div>
+            <Button type="submit" size="lg">
+              Criar minha locadora
+            </Button>
+          </form>
+        )}
 
-      <Link href="/login" className="text-zinc-500 underline">
-        Já tenho cadastro
-      </Link>
-    </main>
+        <Link
+          href="/login"
+          className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          Já tenho cadastro
+        </Link>
+      </CardContent>
+    </Card>
   );
 }

@@ -107,27 +107,22 @@ export async function addVehicle(
 /**
  * Altera a situação de um veículo da locadora de quem está logado.
  *
- * O `id` vem do formulário, ou seja, do browser: ninguém garante que é um
- * veículo da locadora certa. Quem garante é a RLS — se a linha não for dela, o
- * update não acha nada e o gestor recebe "veículo não encontrado", a mesma
- * resposta que receberia para um id inventado.
+ * O `id` vem do browser: ninguém garante que é um veículo da locadora certa.
+ * Quem garante é a RLS — se a linha não for dela, o update não acha nada e o
+ * gestor recebe "veículo não encontrado", a mesma resposta que receberia para
+ * um id inventado.
  */
 export async function changeVehicleStatus(
-  _state: FormState,
-  formData: FormData,
+  id: string,
+  status: VehicleStatus,
 ): Promise<FormState> {
   try {
-    const status = requiredField(formData, "status", "Situação");
-    if (!VEHICLE_STATUSES.includes(status as VehicleStatus)) {
+    if (!VEHICLE_STATUSES.includes(status)) {
       throw new UserError("Situação inválida");
     }
 
     const client = await createClient();
-    const vehicle = await setVehicleStatus(
-      client,
-      requiredField(formData, "id", "Veículo"),
-      status as VehicleStatus,
-    );
+    const vehicle = await setVehicleStatus(client, id, status);
 
     if (!vehicle) throw new UserError("Veículo não encontrado.");
   } catch (error) {

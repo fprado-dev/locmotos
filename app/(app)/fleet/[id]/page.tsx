@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { findVehicle, signedFileUrl } from "@/modules/fleet";
 import { VehicleForm } from "../vehicle-form";
@@ -36,28 +37,30 @@ export default async function VehiclePage({
   );
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-4 sm:p-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
-          <span className="font-mono">{vehicle.plate}</span>{" "}
-          <span className="text-zinc-500">
+    <>
+      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-8">
+        <h1 className="flex items-baseline gap-2.5 text-xl font-semibold tracking-[-0.02em]">
+          <span className="font-mono tracking-[0.02em]">{vehicle.plate}</span>
+          <span className="text-base font-normal text-muted-foreground">
             {vehicle.brand} {vehicle.model}
           </span>
         </h1>
-        <Link href="/fleet" className="text-zinc-500 underline">
+        <Button variant="ghost" render={<Link href="/fleet" />}>
           Voltar
-        </Link>
-      </div>
+        </Button>
+      </header>
 
-      <VehicleForm vehicle={vehicle} />
+      <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
+        <VehicleForm vehicle={vehicle} />
 
-      <div className="border-t border-zinc-200 pt-6 dark:border-zinc-800">
-        <VehicleFiles id={vehicle.id} links={links} />
-      </div>
+        <div className="border-t border-border pt-6">
+          <VehicleFiles id={vehicle.id} links={links} />
+        </div>
 
-      <div className="border-t border-zinc-200 pt-6 dark:border-zinc-800">
-        <DiscardButton id={vehicle.id} />
+        <div className="border-t border-border pt-6">
+          <DiscardButton id={vehicle.id} />
+        </div>
       </div>
-    </main>
+    </>
   );
 }
