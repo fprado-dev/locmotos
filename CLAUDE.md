@@ -17,6 +17,29 @@ See `docs/agents/triage-labels.md`.
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root.
 See `docs/agents/domain.md`.
 
+## Supabase
+
+Every change to the Supabase project goes through the **Supabase MCP server**,
+never through the CLI: `mcp__supabase__apply_migration` for DDL,
+`mcp__supabase__execute_sql` for reads and one-off data fixes. This is
+pre-authorized — apply the migration, do not stop to ask.
+
+The CLI is not linked in this clone, so `supabase db push` fails; the MCP also
+records the migration version in the remote history, which the CLI would
+otherwise leave out of sync.
+
+Two things follow from applying migrations this way:
+
+- The remote picks its own timestamp. Read it back with
+  `mcp__supabase__list_migrations` and name the local file in
+  `supabase/migrations/` with that exact version, or the next push tries to
+  re-apply it.
+- The database moves ahead of `main`, before the PR merges. Say so when handing
+  the work back, with the SQL that undoes it if the PR is dropped.
+
+After DDL, run `mcp__supabase__get_advisors` with `security` and report
+anything new.
+
 ## Handing work back
 
 When an issue is closed or code is pushed, end the reply with a **manual test
