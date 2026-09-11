@@ -1,6 +1,21 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { UserError } from "@/lib/user-error";
 
+/**
+ * Em que situação um veículo está.
+ *
+ * Nesta fatia quem define é o gestor. Quando existir o módulo de Locações,
+ * `reserved` passa a ser derivado de locação ativa.
+ */
+export const VEHICLE_STATUSES = [
+  "available",
+  "reserved",
+  "maintenance",
+  "unavailable",
+] as const;
+
+export type VehicleStatus = (typeof VEHICLE_STATUSES)[number];
+
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
   id: string;
@@ -11,6 +26,7 @@ export type Vehicle = {
   year: number;
   /** A v1 só opera motos, mas o modelo não presume isso. */
   category: string;
+  status: VehicleStatus;
   chassis: string | null;
   renavam: string | null;
   color: string | null;
@@ -58,6 +74,7 @@ type VehicleRow = {
   model: string;
   year: number;
   category: string;
+  status: VehicleStatus;
   chassis: string | null;
   renavam: string | null;
   color: string | null;
@@ -87,6 +104,7 @@ function toVehicle(row: VehicleRow): Vehicle {
     model: row.model,
     year: row.year,
     category: row.category,
+    status: row.status,
     chassis: row.chassis,
     renavam: row.renavam,
     color: row.color,
@@ -191,6 +209,29 @@ export async function findVehicle(
     .from("vehicles")
     .select()
     .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? toVehicle(data as VehicleRow) : null;
+}
+
+/**
+ * Altera a situação de um veículo.
+ *
+ * Devolve `null` quando nenhuma linha era do gestor: a RLS filtra antes do
+ * update, então veículo de outra locadora não é recusado com erro — ele
+ * simplesmente não existe para quem pediu, igual em `findVehicle`.
+ */
+export async function setVehicleStatus(
+  client: SupabaseClient,
+  id: string,
+  status: VehicleStatus,
+): Promise<Vehicle | null> {
+  const { data, error } = await client
+    .from("vehicles")
+    .update({ status })
+    .eq("id", id)
+    .select()
     .maybeSingle();
 
   if (error) throw error;

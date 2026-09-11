@@ -3,7 +3,12 @@ import {
   createAdminClient,
   createAuthenticatedClient,
 } from "@/tests/helpers/supabase";
-import { createVehicle, findVehicle, listVehicles } from "./index";
+import {
+  createVehicle,
+  findVehicle,
+  listVehicles,
+  setVehicleStatus,
+} from "./index";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -147,5 +152,44 @@ describe("frota", () => {
     const found = await findVehicle(tenantB.client, vehicleOfTenantA.id);
 
     expect(found).toBeNull();
+  });
+});
+
+describe("situação do veículo", () => {
+  it("nasce disponível, sem o gestor marcar nada", async () => {
+    const manager = await createManager();
+
+    const created = await createVehicle(manager.client, cg160);
+
+    expect(created.status).toBe("available");
+  });
+
+  it("guarda a situação que o gestor escolheu", async () => {
+    const manager = await createManager();
+    const created = await createVehicle(manager.client, cg160);
+
+    await setVehicleStatus(manager.client, created.id, "maintenance");
+
+    expect(await findVehicle(manager.client, created.id)).toMatchObject({
+      status: "maintenance",
+    });
+  });
+
+  it("recusa alterar a situação de veículo de outra locadora", async () => {
+    const tenantA = await createManager();
+    const tenantB = await createManager();
+    const vehicleOfTenantA = await createVehicle(tenantA.client, cg160);
+
+    const updated = await setVehicleStatus(
+      tenantB.client,
+      vehicleOfTenantA.id,
+      "unavailable",
+    );
+
+    expect(updated).toBeNull();
+    // E não é só o retorno: a moto do vizinho continua como estava.
+    expect(
+      await findVehicle(tenantA.client, vehicleOfTenantA.id),
+    ).toMatchObject({ status: "available" });
   });
 });

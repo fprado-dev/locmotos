@@ -105,6 +105,11 @@ _Evitar_: moto, bem, ativo
 Conjunto de veículos de uma locadora.
 _Código_: `Fleet`
 
+**Situação**:
+Em que estado de operação um veículo está: disponível, reservada, em manutenção ou indisponível. Na v1 quem define é o gestor, na mão.
+_Código_: `VehicleStatus`
+_Evitar_: estado, disponibilidade, condição
+
 **Vistoria**:
 Registro do estado de um veículo na entrega e na devolução: quilometragem, combustível e avarias.
 _Código_: `Inspection`

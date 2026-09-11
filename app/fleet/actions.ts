@@ -9,7 +9,12 @@ import {
 } from "@/lib/form";
 import { createClient } from "@/lib/supabase/server";
 import { UserError } from "@/lib/user-error";
-import { createVehicle } from "@/modules/fleet";
+import {
+  createVehicle,
+  setVehicleStatus,
+  VEHICLE_STATUSES,
+  type VehicleStatus,
+} from "@/modules/fleet";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -73,6 +78,43 @@ export async function addVehicle(
 
     console.error("Falha ao cadastrar veículo", error);
     return { error: "Não foi possível cadastrar o veículo. Tente de novo." };
+  }
+
+  revalidatePath("/fleet");
+  return {};
+}
+
+/**
+ * Altera a situação de um veículo da locadora de quem está logado.
+ *
+ * O `id` vem do formulário, ou seja, do browser: ninguém garante que é um
+ * veículo da locadora certa. Quem garante é a RLS — se a linha não for dela, o
+ * update não acha nada e o gestor recebe "veículo não encontrado", a mesma
+ * resposta que receberia para um id inventado.
+ */
+export async function changeVehicleStatus(
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const status = requiredField(formData, "status", "Situação");
+    if (!VEHICLE_STATUSES.includes(status as VehicleStatus)) {
+      throw new UserError("Situação inválida");
+    }
+
+    const client = await createClient();
+    const vehicle = await setVehicleStatus(
+      client,
+      requiredField(formData, "id", "Veículo"),
+      status as VehicleStatus,
+    );
+
+    if (!vehicle) throw new UserError("Veículo não encontrado.");
+  } catch (error) {
+    if (error instanceof UserError) return { error: error.message };
+
+    console.error("Falha ao alterar a situação do veículo", error);
+    return { error: "Não foi possível alterar a situação. Tente de novo." };
   }
 
   revalidatePath("/fleet");
