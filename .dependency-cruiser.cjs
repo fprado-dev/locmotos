@@ -25,7 +25,11 @@ module.exports = {
         "App Router (Server Components, Server Actions) só enxerga o índice " +
         "público de um módulo, nunca seus arquivos internos.",
       from: { path: "^app/" },
-      to: { path: "^modules/[^/]+/.+" },
+      to: {
+        path: "^modules/[^/]+/.+",
+        // O índice é a porta de entrada do módulo; o resto é entranha.
+        pathNot: "^modules/[^/]+/index\\.ts$",
+      },
     },
     {
       name: "no-circular",

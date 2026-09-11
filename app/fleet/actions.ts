@@ -1,0 +1,39 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { createVehicle } from "@/modules/fleet";
+
+/**
+ * FormData chega do browser: nada aqui é confiável antes de ser checado.
+ *
+ * A validação de verdade da placa (formato, unicidade) é outro ticket; isto é
+ * só a fronteira mínima para não gravar cadastro vazio.
+ */
+function requiredField(formData: FormData, field: string): string {
+  const value = formData.get(field);
+
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Campo obrigatório: ${field}`);
+  }
+
+  return value.trim();
+}
+
+export async function addVehicle(formData: FormData) {
+  const year = Number(requiredField(formData, "year"));
+  if (!Number.isInteger(year)) throw new Error("Ano inválido");
+
+  // O client autenticado é argumento da função de domínio, nunca criado por
+  // ela: é o que deixa o teste rodar a mesma função como outra locadora.
+  const client = await createClient();
+
+  await createVehicle(client, {
+    plate: requiredField(formData, "plate"),
+    brand: requiredField(formData, "brand"),
+    model: requiredField(formData, "model"),
+    year,
+  });
+
+  revalidatePath("/fleet");
+}
