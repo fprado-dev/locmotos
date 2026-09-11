@@ -1,15 +1,19 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 
+const url = () => process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const publishableKey = () => process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+const serviceRoleKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
 /**
  * Client com service-role: ignora RLS.
  *
  * **Só para preparar cenário de teste** — criar usuário, semear dados. Nunca
  * para exercitar o comportamento sob teste: um teste que passa por aqui não
- * prova nada sobre isolamento.
+ * prova nada sobre isolamento entre locadoras.
  */
 export function createAdminClient(): SupabaseClient {
-  return createClient(process.env.API_URL!, process.env.SERVICE_ROLE_KEY!, {
+  return createClient(url(), serviceRoleKey(), {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
@@ -18,11 +22,17 @@ export function createAdminClient(): SupabaseClient {
  * Cria um usuário e devolve um client autenticado como ele.
  *
  * É a peça que torna o seam testável: as funções de `modules/` recebem o client
- * como argumento, então o teste roda a mesma função como pessoas diferentes.
+ * como argumento, então o teste roda a mesma função como pessoas diferentes e
+ * prova o isolamento por RLS (`docs/adr/0001`).
  */
 export async function createAuthenticatedClient(options?: {
   appMetadata?: Record<string, unknown>;
-}): Promise<{ client: SupabaseClient; userId: string; email: string }> {
+}): Promise<{
+  client: SupabaseClient;
+  userId: string;
+  email: string;
+  cleanup: () => Promise<void>;
+}> {
   const admin = createAdminClient();
   const email = `test-${randomUUID()}@locmotos.test`;
   const password = randomUUID();
@@ -37,7 +47,7 @@ export async function createAuthenticatedClient(options?: {
   });
   if (error) throw error;
 
-  const client = createClient(process.env.API_URL!, process.env.ANON_KEY!, {
+  const client = createClient(url(), publishableKey(), {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
@@ -47,5 +57,13 @@ export async function createAuthenticatedClient(options?: {
   });
   if (signInError) throw signInError;
 
-  return { client, userId: data.user.id, email };
+  return {
+    client,
+    userId: data.user.id,
+    email,
+    // Os testes batem num projeto real: o que o teste cria, o teste apaga.
+    cleanup: async () => {
+      await admin.auth.admin.deleteUser(data.user.id);
+    },
+  };
 }

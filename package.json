@@ -14,11 +14,11 @@
     "check": "pnpm typecheck && pnpm lint && pnpm check:boundaries",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:start": "supabase start",
-    "db:stop": "supabase stop",
-    "db:reset": "supabase db reset",
-    "db:status": "supabase status",
-    "prepare": "husky"
+    "db:reset": "supabase db reset --linked",
+    "prepare": "husky",
+    "db:link": "supabase link",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
