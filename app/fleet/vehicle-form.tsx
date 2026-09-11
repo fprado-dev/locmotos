@@ -41,7 +41,7 @@ export function VehicleForm() {
   const [state, formAction, pending] = useActionState(addVehicle, initialState);
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form action={formAction} data-autofill className="flex flex-col gap-4">
       {/* A v1 só oferece motos: quem fixa isso é esta tela, não o modelo. */}
       <input type="hidden" name="category" value="motorcycle" />
 
