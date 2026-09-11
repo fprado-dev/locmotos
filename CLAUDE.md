@@ -23,6 +23,15 @@ The visual spec for Frota and Locatários — tokens, layout, states, component
 anatomy — is `docs/design/frota-locatarios.md`, with the prototypes beside it.
 Read it before touching a screen. It is a base to adjust, not a contract.
 
+**Every UI component comes from shadcn/ui** (`components/ui/`, Base UI
+underneath). What shadcn lacks is composed from its primitives — never written
+raw. No hand-styled `<button>`, `<select>` or `<div>` dialog; `pnpm dlx
+shadcn@latest add <component>` first. See `docs/adr/0008`.
+
+Colors that carry meaning — green available, red overdue, amber expiring, gray
+out of service — are product tokens in `globals.css`. The brand orange lives in
+`--primary` and never means a state.
+
 ## Supabase
 
 Every change to the Supabase project goes through the **Supabase MCP server**,

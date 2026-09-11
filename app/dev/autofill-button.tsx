@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { fakeValue } from "./autofill";
 
 /**
@@ -48,14 +49,15 @@ export function AutofillButton() {
   }
 
   return (
-    <button
+    <Button
       type="button"
+      size="lg"
       onClick={fill}
       aria-label="Preencher o formulário com dados de teste"
       title="Preencher o formulário com dados de teste"
-      className="fixed right-4 bottom-4 z-50 rounded-full bg-amber-500 px-4 py-3 text-sm font-medium text-black shadow-lg hover:bg-amber-400"
+      className="fixed right-4 bottom-4 z-50 rounded-full bg-soon-fg text-background shadow-lg"
     >
       Preencher
-    </button>
+    </Button>
   );
 }

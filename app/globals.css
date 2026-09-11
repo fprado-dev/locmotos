@@ -1,26 +1,167 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-heading:
+    "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  /* Vocabulário do produto, além dos tokens do shadcn. O significado de cada
+     cor está em docs/design/frota-locatarios.md e não é decorativo: verde é
+     disponível, vermelho é vencido, âmbar é vencendo, cinza é fora de
+     operação. Laranja é identidade e ação, e nunca significa estado. */
+  --color-surface-2: var(--surface-2);
+  --color-subtle: var(--subtle);
+  --color-hover: var(--hover);
+  --color-sel: var(--sel);
+  --color-chip: var(--chip);
+  --color-brand-text: var(--brand-text);
+  --color-ok: var(--ok);
+  --color-off: var(--off);
+  --color-late: var(--destructive);
+  --color-late-bg: var(--late-bg);
+  --color-soon-fg: var(--soon-fg);
+  --color-soon-bg: var(--soon-bg);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --background: #f3f3f4;
+  --foreground: #17171a;
+  --card: #ffffff;
+  --card-foreground: #17171a;
+  --popover: #ffffff;
+  --popover-foreground: #17171a;
+  --primary: #c2410c;
+  --primary-foreground: #ffffff;
+  --secondary: #fafafa;
+  --secondary-foreground: #17171a;
+  --muted: #fafafa;
+  --muted-foreground: #67676e;
+  --accent: #ececee;
+  --accent-foreground: #17171a;
+  --destructive: #cf2a21;
+  --border: #e5e5e8;
+  --input: #cfcfd4;
+  --ring: #c2410c;
+  --surface-2: #fafafa;
+  --subtle: #a1a1a8;
+  --hover: #f4f4f5;
+  --sel: rgba(194, 65, 12, 0.08);
+  --chip: #ececee;
+  --brand-text: #b23a0a;
+  --ok: #178a45;
+  --off: #8a8a90;
+  --late-bg: #fde3e1;
+  --soon-fg: #7a3e00;
+  --soon-bg: #fdebc4;
+  --radius: 0.625rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #17171a;
+  --sidebar-primary: #c2410c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ececee;
+  --sidebar-accent-foreground: #17171a;
+  --sidebar-border: #e5e5e8;
+  --sidebar-ring: #c2410c;
+}
+
+.dark {
+  --background: #0e0e0f;
+  --foreground: #ececed;
+  --card: #151517;
+  --card-foreground: #ececed;
+  --popover: #151517;
+  --popover-foreground: #ececed;
+  --primary: #d9501a;
+  --primary-foreground: #ffffff;
+  --secondary: #1b1b1e;
+  --secondary-foreground: #ececed;
+  --muted: #1b1b1e;
+  --muted-foreground: #9a9aa1;
+  --accent: #26262b;
+  --accent-foreground: #ececed;
+  --destructive: #d63a31;
+  --border: #242428;
+  --input: #34343a;
+  --ring: #e96936;
+  --surface-2: #1b1b1e;
+  --subtle: #5d5d64;
+  --hover: #1e1e22;
+  --sel: rgba(226, 83, 26, 0.12);
+  --chip: #26262b;
+  --brand-text: #f07a4a;
+  --ok: #3ccb72;
+  --off: #7c7c84;
+  --late-bg: rgba(214, 58, 49, 0.16);
+  --soon-fg: #f6b63c;
+  --soon-bg: rgba(245, 158, 11, 0.17);
+  --sidebar: #151517;
+  --sidebar-foreground: #ececed;
+  --sidebar-primary: #d9501a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #26262b;
+  --sidebar-accent-foreground: #ececed;
+  --sidebar-border: #242428;
+  --sidebar-ring: #e96936;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Coluna de número existe para comparar linhas; algarismo de largura
+     variável desalinha a comparação. */
+  th,
+  td {
+    font-variant-numeric: tabular-nums;
+  }
 }

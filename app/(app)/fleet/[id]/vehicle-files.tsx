@@ -1,12 +1,14 @@
 "use client";
 
 import { useActionState } from "react";
-import { buttonClass, fieldClass } from "@/app/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { attachVehicleFiles, type FormState } from "../actions";
 
 const initialState: FormState = {};
 
-/** Como cada anexo se chama na tela, e o que o input aceita. */
+/** Como cada anexo se chama na tela, e o que o campo aceita. */
 const FILES = [
   { kind: "photo", label: "Foto", accept: "image/*" },
   { kind: "crlv", label: "CRLV", accept: "image/*,application/pdf" },
@@ -37,15 +39,15 @@ export function VehicleFiles({
       <input type="hidden" name="id" value={id} />
 
       {state.error && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-sm text-destructive">
           {state.error}
         </p>
       )}
 
       <div className="flex flex-wrap items-end gap-4">
         {FILES.map(({ kind, label, accept }) => (
-          <label key={kind} className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">
+          <div key={kind} className="flex flex-col gap-1.5">
+            <Label htmlFor={kind}>
               {label}
               {links[kind] && (
                 <>
@@ -58,30 +60,27 @@ export function VehicleFiles({
                     href={links[kind]}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline"
+                    className="text-brand-text underline underline-offset-4"
                   >
                     abrir
                   </a>
                 </>
               )}
-            </span>
-            <input
+            </Label>
+            <Input
+              id={kind}
               type="file"
               name={kind}
               accept={accept}
-              className={`${fieldClass} text-xs`}
+              className="w-[240px]"
             />
-          </label>
+          </div>
         ))}
       </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className={`${buttonClass} self-start disabled:opacity-50`}
-      >
+      <Button type="submit" disabled={pending} className="self-start">
         {pending ? "Enviando…" : "Enviar arquivos"}
-      </button>
+      </Button>
     </form>
   );
 }
