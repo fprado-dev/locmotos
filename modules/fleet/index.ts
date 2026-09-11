@@ -1,14 +1,18 @@
 export {
+  attachVehicleFile,
   createVehicle,
   findVehicle,
   listVehicles,
   removeVehicle,
   setVehicleStatus,
+  signedFileUrl,
   updateVehicle,
+  VEHICLE_FILE_KINDS,
   VEHICLE_STATUSES,
   VEHICLES_PER_PAGE,
   type NewVehicle,
   type Vehicle,
+  type VehicleFileKind,
   type VehicleFilters,
   type VehicleStatus,
 } from "./vehicles";

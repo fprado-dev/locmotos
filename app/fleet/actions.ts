@@ -11,10 +11,12 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { UserError } from "@/lib/user-error";
 import {
+  attachVehicleFile,
   createVehicle,
   removeVehicle,
   setVehicleStatus,
   updateVehicle,
+  VEHICLE_FILE_KINDS,
   VEHICLE_STATUSES,
   type NewVehicle,
   type VehicleStatus,
@@ -194,4 +196,60 @@ export async function discardVehicle(
 
   revalidatePath("/fleet");
   redirect("/fleet");
+}
+
+/**
+ * Anexa a foto e os documentos que vieram preenchidos.
+ *
+ * O gestor manda o que tem à mão: um formulário com três campos de arquivo,
+ * dos quais normalmente só um foi escolhido. Campo vazio chega como arquivo de
+ * tamanho zero e é ignorado.
+ */
+export async function attachVehicleFiles(
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const id = requiredField(formData, "id", "Veículo");
+    const client = await createClient();
+
+    const chosen = VEHICLE_FILE_KINDS.filter((kind) => {
+      const file = formData.get(kind);
+      return file instanceof File && file.size > 0;
+    });
+
+    if (chosen.length === 0)
+      throw new UserError("Escolha ao menos um arquivo.");
+
+    for (const kind of chosen) {
+      const attached = await attachVehicleFile(
+        client,
+        id,
+        kind,
+        formData.get(kind) as File,
+      );
+
+      if (!attached) throw new UserError("Veículo não encontrado.");
+    }
+  } catch (error) {
+    if (error instanceof UserError) return { error: error.message };
+
+    // O bucket recusa tipo fora da lista e arquivo acima de 10 MB. O recado do
+    // Storage é em inglês e fala de mime type; o gestor precisa de frase.
+    const message = error instanceof Error ? error.message : "";
+    if (/mime type|not supported/i.test(message)) {
+      return {
+        error: "Formato não aceito. Envie imagem (JPG, PNG, WEBP) ou PDF.",
+      };
+    }
+    if (/maximum allowed size|too large|entity too large/i.test(message)) {
+      return { error: "Arquivo grande demais. O limite é 10 MB." };
+    }
+
+    console.error("Falha ao anexar arquivo", error);
+    return { error: "Não foi possível anexar o arquivo. Tente de novo." };
+  }
+
+  revalidatePath("/fleet");
+  return {};
 }
