@@ -2,7 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { listVehicles } from "@/modules/fleet";
 import { addVehicle } from "./actions";
 
-const field = "rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700";
+const fieldClass =
+  "rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700";
 
 export default async function FleetPage() {
   const client = await createClient();
@@ -13,14 +14,29 @@ export default async function FleetPage() {
       <h1 className="text-2xl font-semibold">Frota</h1>
 
       <form action={addVehicle} className="flex flex-wrap items-end gap-3">
-        <input name="plate" placeholder="Placa" className={field} required />
-        <input name="brand" placeholder="Marca" className={field} required />
-        <input name="model" placeholder="Modelo" className={field} required />
+        <input
+          name="plate"
+          placeholder="Placa"
+          className={fieldClass}
+          required
+        />
+        <input
+          name="brand"
+          placeholder="Marca"
+          className={fieldClass}
+          required
+        />
+        <input
+          name="model"
+          placeholder="Modelo"
+          className={fieldClass}
+          required
+        />
         <input
           name="year"
           type="number"
           placeholder="Ano"
-          className={`${field} w-24`}
+          className={`${fieldClass} w-24`}
           required
         />
         <button

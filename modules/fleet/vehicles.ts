@@ -3,6 +3,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
   id: string;
+  tenantId: string;
+  plate: string;
+  brand: string;
+  model: string;
+  year: number;
+  createdAt: string;
+};
+
+export type NewVehicle = Pick<Vehicle, "plate" | "brand" | "model" | "year">;
+
+/** A linha como o Postgres a devolve. Não sai do módulo. */
+type VehicleRow = {
+  id: string;
   tenant_id: string;
   plate: string;
   brand: string;
@@ -11,12 +24,23 @@ export type Vehicle = {
   created_at: string;
 };
 
-export type NewVehicle = Pick<Vehicle, "plate" | "brand" | "model" | "year">;
+// Quem chama o módulo fala o vocabulário do domínio, não o do banco.
+function toVehicle(row: VehicleRow): Vehicle {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    plate: row.plate,
+    brand: row.brand,
+    model: row.model,
+    year: row.year,
+    createdAt: row.created_at,
+  };
+}
 
 /**
  * Cadastra um veículo na locadora de quem está logado.
  *
- * `tenant_id` não é argumento de propósito: quem carimba a locadora é o
+ * `tenantId` não é argumento de propósito: quem carimba a locadora é o
  * default da coluna, a partir do JWT. A aplicação não tem como escolher.
  */
 export async function createVehicle(
@@ -30,7 +54,7 @@ export async function createVehicle(
     .single();
 
   if (error) throw error;
-  return data as Vehicle;
+  return toVehicle(data as VehicleRow);
 }
 
 /** Os veículos da locadora de quem está logado, do mais novo para o mais antigo. */
@@ -41,7 +65,7 @@ export async function listVehicles(client: SupabaseClient): Promise<Vehicle[]> {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return data as Vehicle[];
+  return (data as VehicleRow[]).map(toVehicle);
 }
 
 /**
@@ -61,5 +85,5 @@ export async function findVehicle(
     .maybeSingle();
 
   if (error) throw error;
-  return data as Vehicle | null;
+  return data ? toVehicle(data as VehicleRow) : null;
 }

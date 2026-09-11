@@ -58,25 +58,25 @@ describe("frota", () => {
 
     const created = await createVehicle(manager.client, cg160);
 
-    expect(created.tenant_id).toBe(manager.tenantId);
+    expect(created.tenantId).toBe(manager.tenantId);
   });
 
   it("não lista veículo de outra locadora", async () => {
-    const locadoraA = await createManager();
-    const locadoraB = await createManager();
-    await createVehicle(locadoraA.client, cg160);
+    const tenantA = await createManager();
+    const tenantB = await createManager();
+    await createVehicle(tenantA.client, cg160);
 
-    const vehicles = await listVehicles(locadoraB.client);
+    const vehicles = await listVehicles(tenantB.client);
 
     expect(vehicles).toEqual([]);
   });
 
   it("não entrega veículo de outra locadora nem pelo id direto", async () => {
-    const locadoraA = await createManager();
-    const locadoraB = await createManager();
-    const doLocadoraA = await createVehicle(locadoraA.client, cg160);
+    const tenantA = await createManager();
+    const tenantB = await createManager();
+    const vehicleOfTenantA = await createVehicle(tenantA.client, cg160);
 
-    const found = await findVehicle(locadoraB.client, doLocadoraA.id);
+    const found = await findVehicle(tenantB.client, vehicleOfTenantA.id);
 
     expect(found).toBeNull();
   });
