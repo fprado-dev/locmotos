@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createAdminClient,
   createAuthenticatedClient,
@@ -8,11 +8,15 @@ import {
   findVehicle,
   listVehicles,
   setVehicleStatus,
+  VEHICLES_PER_PAGE,
 } from "./index";
 
 const cleanups: Array<() => Promise<void>> = [];
 
-afterEach(async () => {
+// A limpeza é no fim do arquivo, não a cada teste: cada teste tem a própria
+// locadora, e adiar deixa um fixture compartilhado (`beforeAll`) sobreviver
+// aos testes que o usam.
+afterAll(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
@@ -120,7 +124,7 @@ describe("frota", () => {
     const manager = await createManager();
 
     const created = await createVehicle(manager.client, cg160);
-    const vehicles = await listVehicles(manager.client);
+    const { vehicles } = await listVehicles(manager.client);
 
     expect(vehicles.map((vehicle) => vehicle.id)).toContain(created.id);
     expect(created.plate).toBe("ABC1D23");
@@ -139,7 +143,7 @@ describe("frota", () => {
     const tenantB = await createManager();
     await createVehicle(tenantA.client, cg160);
 
-    const vehicles = await listVehicles(tenantB.client);
+    const { vehicles } = await listVehicles(tenantB.client);
 
     expect(vehicles).toEqual([]);
   });
@@ -191,5 +195,100 @@ describe("situação do veículo", () => {
     expect(
       await findVehicle(tenantA.client, vehicleOfTenantA.id),
     ).toMatchObject({ status: "available" });
+  });
+});
+
+describe("busca e filtros", () => {
+  /**
+   * Uma frota pequena e variada, criada uma vez para o bloco inteiro.
+   *
+   * Não é economia de digitação: cada gestor custa um login, e o projeto
+   * Supabase limita logins por janela de tempo (`docs/adr/0006`). Os testes
+   * daqui só leem, então dividir a mesma frota não os acopla.
+   */
+  async function fleetOfThree() {
+    const manager = await createManager();
+
+    const cg = await createVehicle(manager.client, cg160);
+    const factor = await createVehicle(manager.client, {
+      plate: "XYZ9W88",
+      brand: "Yamaha",
+      model: "Factor 150",
+      year: 2024,
+    });
+    const biz = await createVehicle(manager.client, {
+      plate: "QRS4T55",
+      brand: "Honda",
+      model: "Biz 125",
+      year: 2022,
+    });
+    await setVehicleStatus(manager.client, factor.id, "maintenance");
+
+    return { ...manager, cg, factor, biz };
+  }
+
+  let fleet: Awaited<ReturnType<typeof fleetOfThree>>;
+  let outsider: Awaited<ReturnType<typeof createManager>>;
+
+  beforeAll(async () => {
+    fleet = await fleetOfThree();
+    outsider = await createManager();
+  });
+
+  it("acha o veículo por um pedaço da placa", async () => {
+    // Três letras do meio, em minúscula: é o que o gestor lembra no pátio.
+    const { vehicles } = await listVehicles(fleet.client, { plate: "c1d" });
+
+    expect(vehicles.map((vehicle) => vehicle.id)).toEqual([fleet.cg.id]);
+  });
+
+  it("devolve só a situação pedida", async () => {
+    const { vehicles } = await listVehicles(fleet.client, {
+      status: "maintenance",
+    });
+
+    expect(vehicles.map((vehicle) => vehicle.id)).toEqual([fleet.factor.id]);
+  });
+
+  it("combina os filtros em vez de escolher um", async () => {
+    // Cada filtro sozinho devolveria duas motos: são duas Honda na frota e
+    // dois veículos 2024. Juntos, sobra uma.
+    const { vehicles } = await listVehicles(fleet.client, {
+      brand: "honda",
+      year: 2024,
+    });
+
+    expect(vehicles.map((vehicle) => vehicle.id)).toEqual([fleet.cg.id]);
+  });
+
+  it("não deixa o filtro atravessar a fronteira da locadora", async () => {
+    const { vehicles } = await listVehicles(outsider.client, {
+      plate: fleet.cg.plate,
+    });
+
+    expect(vehicles).toEqual([]);
+  });
+
+  it("quebra a lista em páginas e avisa que há mais", async () => {
+    const manager = await createManager();
+    await Promise.all(
+      Array.from({ length: VEHICLES_PER_PAGE + 1 }, (_, index) =>
+        createVehicle(manager.client, {
+          ...cg160,
+          plate: `PAG${String(index).padStart(4, "0")}`,
+        }),
+      ),
+    );
+
+    const first = await listVehicles(manager.client);
+    const second = await listVehicles(manager.client, { page: 2 });
+
+    expect(first.vehicles).toHaveLength(VEHICLES_PER_PAGE);
+    expect(first.hasMore).toBe(true);
+    expect(second.vehicles).toHaveLength(1);
+    expect(second.hasMore).toBe(false);
+    // A página 2 continua de onde a 1 parou, sem repetir nem pular ninguém.
+    const ids = [...first.vehicles, ...second.vehicles].map((v) => v.id);
+    expect(new Set(ids).size).toBe(VEHICLES_PER_PAGE + 1);
   });
 });

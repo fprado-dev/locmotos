@@ -13,6 +13,8 @@ Daí duas regras que não são opcionais:
 1. **Nunca apontar a suíte para o projeto de produção.** Use um branch do Supabase, que é um projeto real com as mesmas migrations e dados descartáveis.
 2. **O que o teste cria, o teste apaga.** Todo helper que cria entidade devolve um `cleanup`, e o teste é responsável por chamá-lo.
 
+**O login tem cota.** Cada gestor de teste faz um `signInWithPassword`, e o projeto hospedado limita logins por janela de tempo — a suíte inteira cabe numa janela, duas execuções seguidas não. Daí duas consequências práticas: um teste que só precisa de "alguém de outra locadora" divide esse gestor com os outros (`beforeAll`), em vez de criar um por teste; e, se a suíte falhar em massa com `Request rate limit reached`, o problema é a cota, não o código — espere a janela virar e rode de novo.
+
 Os testes também ficam mais lentos e dependem de rede — `fileParallelism` está desligado no vitest porque os arquivos compartilham um único banco.
 
 A `SUPABASE_SERVICE_ROLE_KEY` passa a ser necessária para rodar testes. Ela ignora RLS por construção, existe apenas em `.env.local`, não tem prefixo `NEXT_PUBLIC_` e nunca deve chegar ao browser.

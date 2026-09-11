@@ -184,15 +184,67 @@ export async function createVehicle(
   return toVehicle(data as VehicleRow);
 }
 
-/** Os veículos da locadora de quem está logado, do mais novo para o mais antigo. */
-export async function listVehicles(client: SupabaseClient): Promise<Vehicle[]> {
-  const { data, error } = await client
-    .from("vehicles")
-    .select()
-    .order("created_at", { ascending: false });
+/** Quantos veículos cabem numa página da lista. */
+export const VEHICLES_PER_PAGE = 20;
+
+/**
+ * O que o gestor pediu para ver.
+ *
+ * Campo ausente não filtra. Placa, marca e modelo casam por pedaço — quem
+ * procura no pátio lembra três letras da placa, não a placa inteira.
+ */
+export type VehicleFilters = {
+  plate?: string;
+  brand?: string;
+  model?: string;
+  year?: number;
+  status?: VehicleStatus;
+  /** Começa em 1. */
+  page?: number;
+};
+
+// `%`, `_` e `*` são curinga para o PostgREST. O gestor está digitando uma
+// placa, não um padrão de busca: os curingas somem em vez de virar sintaxe.
+function contains(term: string): string {
+  return `%${term.trim().replace(/[%_*\\]/g, "")}%`;
+}
+
+/**
+ * Os veículos da locadora de quem está logado, do mais novo para o mais antigo.
+ *
+ * `hasMore` diz se existe página seguinte. Ele sai de uma linha a mais pedida
+ * ao banco — mais barato que um `count` exato, que varreria a frota inteira a
+ * cada busca só para escrever um número na tela.
+ *
+ * ponytail: busca por pedaço de placa é varredura dentro da locadora; índice
+ * trigram (`pg_trgm`) quando uma frota passar de alguns milhares de motos.
+ */
+export async function listVehicles(
+  client: SupabaseClient,
+  filters: VehicleFilters = {},
+): Promise<{ vehicles: Vehicle[]; hasMore: boolean }> {
+  let query = client.from("vehicles").select();
+
+  if (filters.plate) query = query.ilike("plate", contains(filters.plate));
+  if (filters.brand) query = query.ilike("brand", contains(filters.brand));
+  if (filters.model) query = query.ilike("model", contains(filters.model));
+  if (filters.year) query = query.eq("year", filters.year);
+  if (filters.status) query = query.eq("status", filters.status);
+
+  const from = (Math.max(1, filters.page ?? 1) - 1) * VEHICLES_PER_PAGE;
+
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    // `range` é inclusivo nas duas pontas: isto pede VEHICLES_PER_PAGE + 1.
+    .range(from, from + VEHICLES_PER_PAGE);
 
   if (error) throw error;
-  return (data as VehicleRow[]).map(toVehicle);
+
+  const rows = data as VehicleRow[];
+  return {
+    vehicles: rows.slice(0, VEHICLES_PER_PAGE).map(toVehicle),
+    hasMore: rows.length > VEHICLES_PER_PAGE,
+  };
 }
 
 /**
