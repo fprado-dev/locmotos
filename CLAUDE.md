@@ -17,6 +17,12 @@ See `docs/agents/triage-labels.md`.
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root.
 See `docs/agents/domain.md`.
 
+### Design
+
+The visual spec for Frota and Locatários — tokens, layout, states, component
+anatomy — is `docs/design/frota-locatarios.md`, with the prototypes beside it.
+Read it before touching a screen. It is a base to adjust, not a contract.
+
 ## Supabase
 
 Every change to the Supabase project goes through the **Supabase MCP server**,
