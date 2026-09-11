@@ -24,6 +24,15 @@ export type VehicleFileKind = (typeof VEHICLE_FILE_KINDS)[number];
 /** Onde os arquivos de veículo moram. Bucket privado, sem URL pública. */
 const FILES_BUCKET = "vehicle-files";
 
+/**
+ * A linha do veículo com o nome da locadora junto.
+ *
+ * Para o gestor é sempre a dele, e não aparece na tela. Para o operador do
+ * SaaS, que enxerga a frota de todas, é o que distingue duas motos de placa
+ * igual em locadoras diferentes — o que o banco permite de propósito.
+ */
+const COLUMNS = "*, tenants(name)";
+
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
   id: string;
@@ -45,6 +54,7 @@ export type Vehicle = {
   purchaseValue: number | null;
   purchaseDate: string | null;
   notes: string | null;
+  tenantName: string | null;
   /** Caminho no bucket privado, não URL: quem serve o arquivo é a URL assinada. */
   photoPath: string | null;
   crlvPath: string | null;
@@ -101,6 +111,7 @@ type VehicleRow = {
   crlv_path: string | null;
   crv_path: string | null;
   created_at: string;
+  tenants: { name: string } | null;
 };
 
 // `numeric` chega como string em algumas versões do PostgREST e como número em
@@ -130,6 +141,7 @@ function toVehicle(row: VehicleRow): Vehicle {
     purchaseValue: toAmount(row.purchase_value),
     purchaseDate: row.purchase_date,
     notes: row.notes,
+    tenantName: row.tenants?.name ?? null,
     photoPath: row.photo_path,
     crlvPath: row.crlv_path,
     crvPath: row.crv_path,
@@ -195,7 +207,7 @@ export async function createVehicle(
   const { data, error } = await client
     .from("vehicles")
     .insert(row)
-    .select()
+    .select(COLUMNS)
     .single();
 
   if (error) throw toDomainError(error, row.plate);
@@ -244,7 +256,7 @@ export async function listVehicles(
   // Veículo com baixa não está mais na frota. O filtro vive aqui, e não numa
   // policy, porque a policy de update precisa continuar alcançando a linha
   // para dar a baixa.
-  let query = client.from("vehicles").select().is("deleted_at", null);
+  let query = client.from("vehicles").select(COLUMNS).is("deleted_at", null);
 
   if (filters.plate) query = query.ilike("plate", contains(filters.plate));
   if (filters.brand) query = query.ilike("brand", contains(filters.brand));
@@ -280,7 +292,7 @@ export async function findVehicle(
 ): Promise<Vehicle | null> {
   const { data, error } = await client
     .from("vehicles")
-    .select()
+    .select(COLUMNS)
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -306,7 +318,7 @@ export async function setVehicleStatus(
     .update({ status })
     .eq("id", id)
     .is("deleted_at", null)
-    .select()
+    .select(COLUMNS)
     .maybeSingle();
 
   if (error) throw error;
@@ -334,7 +346,7 @@ export async function updateVehicle(
     .update(row)
     .eq("id", id)
     .is("deleted_at", null)
-    .select()
+    .select(COLUMNS)
     .maybeSingle();
 
   if (error) throw toDomainError(error, row.plate);
@@ -358,7 +370,7 @@ export async function removeVehicle(
     .update({ deleted_at: new Date().toISOString() })
     .eq("id", id)
     .is("deleted_at", null)
-    .select()
+    .select(COLUMNS)
     .maybeSingle();
 
   if (error) throw error;
@@ -413,7 +425,7 @@ export async function attachVehicleFile(
     .update({ [FILE_COLUMNS[kind]]: path })
     .eq("id", id)
     .is("deleted_at", null)
-    .select()
+    .select(COLUMNS)
     .maybeSingle();
 
   if (error) throw error;

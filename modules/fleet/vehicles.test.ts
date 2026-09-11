@@ -554,3 +554,77 @@ describe("foto e documentos", () => {
     });
   });
 });
+
+describe("operador do SaaS", () => {
+  /**
+   * Quem opera o produto, e não uma locadora.
+   *
+   * Sem `tenant_id` no JWT de propósito: o que ele enxerga não vem de pertencer
+   * a uma locadora, vem da policy de operador.
+   */
+  async function createOperator() {
+    const { client, cleanup } = await createAuthenticatedClient({
+      appMetadata: { is_operator: true },
+    });
+    cleanups.push(cleanup);
+
+    return client;
+  }
+
+  it("enxerga a frota de mais de uma locadora, e o gestor continua na dele", async () => {
+    const zé = await createManager();
+    const maria = await createManager();
+    const motoDoZé = await createVehicle(zé.client, {
+      ...cg160,
+      plate: "OPR1A01",
+    });
+    const motoDaMaria = await createVehicle(maria.client, {
+      ...cg160,
+      plate: "OPR1A02",
+    });
+
+    const operator = await createOperator();
+    // A frota do projeto inteiro passa por aqui, inclusive de outros testes:
+    // o que importa é que as duas locadoras aparecem para o operador.
+    const { vehicles } = await listVehicles(operator, { plate: "OPR1A0" });
+
+    expect(vehicles.map((vehicle) => vehicle.id).sort()).toEqual(
+      [motoDoZé.id, motoDaMaria.id].sort(),
+    );
+    // E dá para dizer de quem é cada uma: duas locadoras podem ter a mesma
+    // placa, então sem o nome a lista do operador seria ambígua.
+    expect(vehicles.every((vehicle) => vehicle.tenantName)).toBe(true);
+
+    // E a policy nova não afrouxou nada para quem é gestor.
+    expect(await findVehicle(zé.client, motoDaMaria.id)).toBeNull();
+    expect(await findVehicle(maria.client, motoDoZé.id)).toBeNull();
+  });
+
+  it("lê a frota alheia, mas não escreve nela", async () => {
+    const manager = await createManager();
+    const moto = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "OPR1A03",
+    });
+
+    const operator = await createOperator();
+
+    // Enxerga.
+    expect(await findVehicle(operator, moto.id)).toMatchObject({
+      plate: "OPR1A03",
+    });
+
+    // E só. O acesso ampliado é de leitura: as policies de escrita continuam
+    // exigindo a locadora do JWT, e o operador não tem nenhuma.
+    expect(await setVehicleStatus(operator, moto.id, "maintenance")).toBeNull();
+    expect(
+      await updateVehicle(operator, moto.id, { ...cg160, brand: "Trocada" }),
+    ).toBeNull();
+    expect(await removeVehicle(operator, moto.id)).toBeNull();
+
+    expect(await findVehicle(manager.client, moto.id)).toMatchObject({
+      status: "available",
+      brand: "Honda",
+    });
+  });
+});
