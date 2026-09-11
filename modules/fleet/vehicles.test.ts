@@ -7,7 +7,9 @@ import {
   createVehicle,
   findVehicle,
   listVehicles,
+  removeVehicle,
   setVehicleStatus,
+  updateVehicle,
   VEHICLES_PER_PAGE,
 } from "./index";
 
@@ -290,5 +292,123 @@ describe("busca e filtros", () => {
     // A página 2 continua de onde a 1 parou, sem repetir nem pular ninguém.
     const ids = [...first.vehicles, ...second.vehicles].map((v) => v.id);
     expect(new Set(ids).size).toBe(VEHICLES_PER_PAGE + 1);
+  });
+});
+
+describe("correção e baixa", () => {
+  /**
+   * Um gestor e um vizinho, para o bloco inteiro.
+   *
+   * Cada gestor custa um login, e o projeto Supabase limita logins por janela
+   * (`docs/adr/0006`). Os testes daqui convivem na mesma locadora porque cada
+   * um usa a própria placa — o que os isolaria é a placa, não o tenant.
+   */
+  let owner: Awaited<ReturnType<typeof createManager>>;
+  let outsider: Awaited<ReturnType<typeof createManager>>;
+
+  beforeAll(async () => {
+    owner = await createManager();
+    outsider = await createManager();
+  });
+
+  it("guarda a correção que o gestor fez", async () => {
+    const moto = { ...cg160Full, plate: "EDT1A01" };
+    const created = await createVehicle(owner.client, moto);
+
+    await updateVehicle(owner.client, created.id, {
+      ...moto,
+      color: "Preta",
+      notes: "Baú removido.",
+    });
+
+    expect(await findVehicle(owner.client, created.id)).toMatchObject({
+      color: "Preta",
+      notes: "Baú removido.",
+      plate: moto.plate,
+    });
+  });
+
+  it("atualiza a quilometragem sem mexer no resto", async () => {
+    const moto = { ...cg160Full, plate: "EDT1A02" };
+    const created = await createVehicle(owner.client, moto);
+
+    // É o que acontece na devolução: o gestor mexe num campo só.
+    await updateVehicle(owner.client, created.id, { ...moto, mileage: 21_500 });
+
+    expect(await findVehicle(owner.client, created.id)).toMatchObject({
+      ...moto,
+      mileage: 21_500,
+    });
+  });
+
+  it("tira da lista o veículo que recebeu baixa", async () => {
+    const created = await createVehicle(owner.client, {
+      ...cg160,
+      plate: "EDT1A03",
+    });
+
+    await removeVehicle(owner.client, created.id);
+
+    const { vehicles } = await listVehicles(owner.client);
+    expect(vehicles.map((vehicle) => vehicle.id)).not.toContain(created.id);
+    expect(await findVehicle(owner.client, created.id)).toBeNull();
+  });
+
+  it("mantém no banco a linha do veículo que saiu da frota", async () => {
+    const created = await createVehicle(owner.client, {
+      ...cg160,
+      plate: "EDT1A04",
+    });
+
+    await removeVehicle(owner.client, created.id);
+
+    // Pelo client do gestor a moto sumiu; a linha continua lá, e é isso que
+    // Locações e Finanças vão referenciar depois.
+    const { data } = await createAdminClient()
+      .from("vehicles")
+      .select("id, deleted_at")
+      .eq("id", created.id)
+      .single();
+
+    expect(data?.deleted_at).not.toBeNull();
+  });
+
+  it("libera a placa depois da baixa", async () => {
+    const moto = { ...cg160, plate: "EDT1A05" };
+    const created = await createVehicle(owner.client, moto);
+    await removeVehicle(owner.client, created.id);
+
+    // A moto foi dada como baixa por engano e volta para a frota.
+    const again = await createVehicle(owner.client, moto);
+
+    expect(again.plate).toBe(moto.plate);
+  });
+
+  it("recusa corrigir veículo do vizinho", async () => {
+    const moto = { ...cg160, plate: "EDT1A06" };
+    const mine = await createVehicle(owner.client, moto);
+
+    const updated = await updateVehicle(outsider.client, mine.id, {
+      ...moto,
+      brand: "Roubada",
+    });
+
+    expect(updated).toBeNull();
+    expect(await findVehicle(owner.client, mine.id)).toMatchObject({
+      brand: "Honda",
+    });
+  });
+
+  it("recusa dar baixa em veículo do vizinho", async () => {
+    const mine = await createVehicle(owner.client, {
+      ...cg160,
+      plate: "EDT1A07",
+    });
+
+    const removed = await removeVehicle(outsider.client, mine.id);
+
+    expect(removed).toBeNull();
+    // A moto continua na frota de quem é dela.
+    expect(await findVehicle(owner.client, mine.id)).not.toBeNull();
   });
 });

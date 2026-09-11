@@ -223,7 +223,10 @@ export async function listVehicles(
   client: SupabaseClient,
   filters: VehicleFilters = {},
 ): Promise<{ vehicles: Vehicle[]; hasMore: boolean }> {
-  let query = client.from("vehicles").select();
+  // Veículo com baixa não está mais na frota. O filtro vive aqui, e não numa
+  // policy, porque a policy de update precisa continuar alcançando a linha
+  // para dar a baixa.
+  let query = client.from("vehicles").select().is("deleted_at", null);
 
   if (filters.plate) query = query.ilike("plate", contains(filters.plate));
   if (filters.brand) query = query.ilike("brand", contains(filters.brand));
@@ -261,6 +264,7 @@ export async function findVehicle(
     .from("vehicles")
     .select()
     .eq("id", id)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (error) throw error;
@@ -283,6 +287,59 @@ export async function setVehicleStatus(
     .from("vehicles")
     .update({ status })
     .eq("id", id)
+    .is("deleted_at", null)
+    .select()
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? toVehicle(data as VehicleRow) : null;
+}
+
+/**
+ * Corrige o cadastro de um veículo.
+ *
+ * Recebe o cadastro inteiro, não um pedaço: o formulário devolve todos os
+ * campos, e mandar tudo evita a pergunta "campo ausente é apagar ou manter?".
+ * Quem quiser mudar só a quilometragem manda o resto igual.
+ *
+ * Devolve `null` quando o veículo não é de quem pediu — ou já saiu da frota.
+ */
+export async function updateVehicle(
+  client: SupabaseClient,
+  id: string,
+  vehicle: NewVehicle,
+): Promise<Vehicle | null> {
+  const row = toRow(vehicle);
+
+  const { data, error } = await client
+    .from("vehicles")
+    .update(row)
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select()
+    .maybeSingle();
+
+  if (error) throw toDomainError(error, row.plate);
+  return data ? toVehicle(data as VehicleRow) : null;
+}
+
+/**
+ * Dá baixa num veículo: ele sai da frota e a linha fica.
+ *
+ * A baixa é um `update`, não um `delete` — quem já podia alterar o veículo
+ * pode dar baixa nele, e a policy que existe basta. O `is("deleted_at", null)`
+ * antes do update faz a segunda baixa devolver `null` em vez de mexer na data
+ * da primeira.
+ */
+export async function removeVehicle(
+  client: SupabaseClient,
+  id: string,
+): Promise<Vehicle | null> {
+  const { data, error } = await client
+    .from("vehicles")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("deleted_at", null)
     .select()
     .maybeSingle();
 

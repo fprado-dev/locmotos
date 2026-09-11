@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { signOut } from "@/app/(auth)/actions";
 import { buttonClass, fieldClass, STATUS_LABELS } from "@/app/ui";
 import { createClient } from "@/lib/supabase/server";
@@ -135,9 +136,9 @@ export default async function FleetPage({
           Filtrar
         </button>
         {filtering && (
-          <a href="/fleet" className="py-2 text-zinc-500 underline">
+          <Link href="/fleet" className="py-2 text-zinc-500 underline">
             Limpar
-          </a>
+          </Link>
         )}
       </form>
 
@@ -154,7 +155,12 @@ export default async function FleetPage({
               key={vehicle.id}
               className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3"
             >
-              <span className="font-mono">{vehicle.plate}</span>
+              <Link
+                href={`/fleet/${vehicle.id}`}
+                className="font-mono underline"
+              >
+                {vehicle.plate}
+              </Link>
               <span>
                 {vehicle.brand} {vehicle.model}
               </span>
@@ -171,15 +177,15 @@ export default async function FleetPage({
       {(page > 1 || hasMore) && (
         <nav className="flex items-center gap-4 text-sm">
           {page > 1 && (
-            <a href={pageHref(filters, page - 1)} className="underline">
+            <Link href={pageHref(filters, page - 1)} className="underline">
               ← Anteriores
-            </a>
+            </Link>
           )}
           <span className="text-zinc-500">Página {page}</span>
           {hasMore && (
-            <a href={pageHref(filters, page + 1)} className="underline">
+            <Link href={pageHref(filters, page + 1)} className="underline">
               Próximos →
-            </a>
+            </Link>
           )}
         </nav>
       )}
