@@ -4,11 +4,13 @@ import {
   createAuthenticatedClient,
 } from "@/tests/helpers/supabase";
 import {
+  attachVehicleFile,
   createVehicle,
   findVehicle,
   listVehicles,
   removeVehicle,
   setVehicleStatus,
+  signedFileUrl,
   updateVehicle,
   VEHICLES_PER_PAGE,
 } from "./index";
@@ -21,6 +23,32 @@ const cleanups: Array<() => Promise<void>> = [];
 afterAll(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
+
+/**
+ * Apaga os arquivos que a locadora de teste subiu.
+ *
+ * O `on delete cascade` leva as linhas, não os objetos do Storage: sem isto o
+ * bucket do projeto vai acumulando CRLV de teste para sempre.
+ */
+async function removeFilesOf(tenantId: string) {
+  const bucket = createAdminClient().storage.from("vehicle-files");
+
+  const { data: vehicles } = await bucket.list(tenantId);
+  const paths = (
+    await Promise.all(
+      (vehicles ?? []).map(async (vehicle) => {
+        const { data: files } = await bucket.list(
+          `${tenantId}/${vehicle.name}`,
+        );
+        return (files ?? []).map(
+          (file) => `${tenantId}/${vehicle.name}/${file.name}`,
+        );
+      }),
+    )
+  ).flat();
+
+  if (paths.length > 0) await bucket.remove(paths);
+}
 
 /**
  * Um gestor autenticado, com a locadora dele gravada no JWT.
@@ -46,6 +74,7 @@ async function createManager() {
   cleanups.push(async () => {
     // Os testes batem num projeto real (docs/adr/0006): a locadora criada aqui
     // some, e leva os veículos junto (on delete cascade).
+    await removeFilesOf(tenantId);
     await admin.from("tenants").delete().eq("id", tenantId);
     await cleanup();
   });
@@ -410,5 +439,118 @@ describe("correção e baixa", () => {
     expect(removed).toBeNull();
     // A moto continua na frota de quem é dela.
     expect(await findVehicle(owner.client, mine.id)).not.toBeNull();
+  });
+});
+
+describe("foto e documentos", () => {
+  /** Um PDF minúsculo, mas PDF de verdade: o bucket confere o tipo. */
+  function crlv(name = "crlv.pdf") {
+    return new File([Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d])], name, {
+      type: "application/pdf",
+    });
+  }
+
+  let owner: Awaited<ReturnType<typeof createManager>>;
+  let outsider: Awaited<ReturnType<typeof createManager>>;
+
+  beforeAll(async () => {
+    owner = await createManager();
+    outsider = await createManager();
+  });
+
+  it("guarda o caminho do documento no cadastro", async () => {
+    const moto = { ...cg160, plate: "DOC1A01" };
+    const created = await createVehicle(owner.client, moto);
+
+    const withFile = await attachVehicleFile(
+      owner.client,
+      created.id,
+      "crlv",
+      crlv(),
+    );
+
+    // O caminho começa pela locadora: é a primeira pasta que a policy do
+    // Storage compara com o JWT.
+    expect(withFile?.crlvPath).toBe(`${owner.tenantId}/${created.id}/crlv.pdf`);
+  });
+
+  it("abre o arquivo por URL assinada", async () => {
+    const created = await createVehicle(owner.client, {
+      ...cg160,
+      plate: "DOC1A02",
+    });
+    const withFile = await attachVehicleFile(
+      owner.client,
+      created.id,
+      "crlv",
+      crlv(),
+    );
+
+    const url = await signedFileUrl(owner.client, withFile!.crlvPath!);
+    const response = await fetch(url!);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("não serve o arquivo pela URL pública do bucket", async () => {
+    const created = await createVehicle(owner.client, {
+      ...cg160,
+      plate: "DOC1A03",
+    });
+    const withFile = await attachVehicleFile(
+      owner.client,
+      created.id,
+      "crlv",
+      crlv(),
+    );
+
+    // O mesmo caminho, sem assinatura: é o que alguém tentaria montar na mão.
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/vehicle-files/${withFile!.crlvPath}`,
+    );
+
+    expect(response.ok).toBe(false);
+  });
+
+  it("não deixa o vizinho ler o arquivo da minha locadora", async () => {
+    const created = await createVehicle(owner.client, {
+      ...cg160,
+      plate: "DOC1A04",
+    });
+    const withFile = await attachVehicleFile(
+      owner.client,
+      created.id,
+      "crlv",
+      crlv(),
+    );
+
+    // O vizinho sabe o caminho — e mesmo assim não consegue assinar nem baixar.
+    await expect(
+      signedFileUrl(outsider.client, withFile!.crlvPath!),
+    ).rejects.toThrow();
+
+    const { error } = await outsider.client.storage
+      .from("vehicle-files")
+      .download(withFile!.crlvPath!);
+    expect(error).not.toBeNull();
+  });
+
+  it("recusa anexar em veículo do vizinho, sem subir nada", async () => {
+    const mine = await createVehicle(owner.client, {
+      ...cg160,
+      plate: "DOC1A05",
+    });
+
+    const attached = await attachVehicleFile(
+      outsider.client,
+      mine.id,
+      "crlv",
+      crlv(),
+    );
+
+    expect(attached).toBeNull();
+    expect(await findVehicle(owner.client, mine.id)).toMatchObject({
+      crlvPath: null,
+    });
   });
 });

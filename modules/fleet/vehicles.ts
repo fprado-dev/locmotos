@@ -16,6 +16,14 @@ export const VEHICLE_STATUSES = [
 
 export type VehicleStatus = (typeof VEHICLE_STATUSES)[number];
 
+/** Os três anexos que um veículo tem: a foto e os dois documentos. */
+export const VEHICLE_FILE_KINDS = ["photo", "crlv", "crv"] as const;
+
+export type VehicleFileKind = (typeof VEHICLE_FILE_KINDS)[number];
+
+/** Onde os arquivos de veículo moram. Bucket privado, sem URL pública. */
+const FILES_BUCKET = "vehicle-files";
+
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
   id: string;
@@ -37,6 +45,10 @@ export type Vehicle = {
   purchaseValue: number | null;
   purchaseDate: string | null;
   notes: string | null;
+  /** Caminho no bucket privado, não URL: quem serve o arquivo é a URL assinada. */
+  photoPath: string | null;
+  crlvPath: string | null;
+  crvPath: string | null;
   createdAt: string;
 };
 
@@ -85,6 +97,9 @@ type VehicleRow = {
   purchase_value: number | string | null;
   purchase_date: string | null;
   notes: string | null;
+  photo_path: string | null;
+  crlv_path: string | null;
+  crv_path: string | null;
   created_at: string;
 };
 
@@ -115,6 +130,9 @@ function toVehicle(row: VehicleRow): Vehicle {
     purchaseValue: toAmount(row.purchase_value),
     purchaseDate: row.purchase_date,
     notes: row.notes,
+    photoPath: row.photo_path,
+    crlvPath: row.crlv_path,
+    crvPath: row.crv_path,
     createdAt: row.created_at,
   };
 }
@@ -345,4 +363,86 @@ export async function removeVehicle(
 
   if (error) throw error;
   return data ? toVehicle(data as VehicleRow) : null;
+}
+
+/** A coluna onde o caminho de cada anexo é guardado. */
+const FILE_COLUMNS: Record<
+  VehicleFileKind,
+  "photo_path" | "crlv_path" | "crv_path"
+> = {
+  photo: "photo_path",
+  crlv: "crlv_path",
+  crv: "crv_path",
+};
+
+/** A extensão do arquivo que o gestor escolheu, para o download sair com nome. */
+function extension(fileName: string): string {
+  const parts = fileName.toLowerCase().split(".");
+  return parts.length > 1 ? `.${parts.pop()!.replace(/[^a-z0-9]/g, "")}` : "";
+}
+
+/**
+ * Anexa foto ou documento a um veículo.
+ *
+ * O caminho começa pela locadora — `<tenant>/<veículo>/<tipo>` — porque é a
+ * primeira pasta que a policy do Storage compara com o JWT. A aplicação monta
+ * o caminho, mas quem recusa o caminho errado é o banco.
+ *
+ * Devolve `null` para veículo que não é de quem pediu: a busca acontece antes
+ * do upload, então arquivo de ninguém sobra no bucket.
+ */
+export async function attachVehicleFile(
+  client: SupabaseClient,
+  id: string,
+  kind: VehicleFileKind,
+  file: File,
+): Promise<Vehicle | null> {
+  const vehicle = await findVehicle(client, id);
+  if (!vehicle) return null;
+
+  const path = `${vehicle.tenantId}/${vehicle.id}/${kind}${extension(file.name)}`;
+
+  const { error: uploadError } = await client.storage
+    .from(FILES_BUCKET)
+    .upload(path, file, { upsert: true, contentType: file.type });
+
+  if (uploadError) throw uploadError;
+
+  const { data, error } = await client
+    .from("vehicles")
+    .update({ [FILE_COLUMNS[kind]]: path })
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select()
+    .maybeSingle();
+
+  if (error) throw error;
+
+  // Trocar um PDF por uma foto muda a extensão, e o arquivo antigo ficaria no
+  // bucket sem ninguém apontando para ele.
+  const previous = vehicle[`${kind}Path`];
+  if (previous && previous !== path) {
+    await client.storage.from(FILES_BUCKET).remove([previous]);
+  }
+
+  return data ? toVehicle(data as VehicleRow) : null;
+}
+
+/**
+ * URL de vida curta para abrir um anexo.
+ *
+ * O bucket é privado: sem assinatura não há leitura, e a assinatura vence.
+ * Um link que vazasse do celular do gestor deixa de servir em um minuto.
+ */
+export async function signedFileUrl(
+  client: SupabaseClient,
+  path: string,
+  seconds = 60,
+): Promise<string | null> {
+  const { data, error } = await client.storage
+    .from(FILES_BUCKET)
+    .createSignedUrl(path, seconds);
+
+  if (error) throw error;
+  return data?.signedUrl ?? null;
 }
