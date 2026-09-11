@@ -64,6 +64,11 @@ export default async function FleetPage({
   const client = await createClient();
   const { vehicles, hasMore } = await listVehicles(client, filters);
 
+  // Só o operador do SaaS enxerga mais de uma locadora. Para o gestor a coluna
+  // seria a mesma palavra repetida em toda linha.
+  const manyTenants =
+    new Set(vehicles.map((vehicle) => vehicle.tenantId)).size > 1;
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-4 sm:p-8">
       <div className="flex items-center justify-between">
@@ -167,6 +172,9 @@ export default async function FleetPage({
               <span className="text-zinc-500">{vehicle.year}</span>
               {vehicle.color && (
                 <span className="text-zinc-500">{vehicle.color}</span>
+              )}
+              {manyTenants && (
+                <span className="text-zinc-500">{vehicle.tenantName}</span>
               )}
               <StatusSelect id={vehicle.id} status={vehicle.status} />
             </li>
