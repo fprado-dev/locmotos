@@ -1,3 +1,5 @@
+import { UserError } from "./user-error";
+
 /**
  * Campo de texto obrigatório vindo de um formulário.
  *
@@ -11,7 +13,7 @@ export function requiredField(
   const value = formData.get(field);
 
   if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`Campo obrigatório: ${label}`);
+    throw new UserError(`Campo obrigatório: ${label}`);
   }
 
   return value.trim();
@@ -28,17 +30,32 @@ export function optionalField(
   return value.trim();
 }
 
-/** Número opcional, recusado se vier preenchido com coisa que não é número. */
+/**
+ * Número opcional, dentro do que a coluna aguenta.
+ *
+ * A faixa não é capricho: `numeric(10,2)` e `integer` estouram no banco, e
+ * estouro de coluna chega ao gestor como erro 500, não como recado.
+ */
 export function optionalNumber(
   formData: FormData,
   field: string,
   label: string,
+  { max, integer = false }: { max: number; integer?: boolean },
 ): number | null {
   const value = optionalField(formData, field);
   if (value === null) return null;
 
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) throw new Error(`${label}: número inválido`);
+  const valid =
+    Number.isFinite(parsed) &&
+    parsed >= 0 &&
+    parsed <= max &&
+    (!integer || Number.isInteger(parsed));
+
+  if (!valid) throw new UserError(`${label}: valor inválido`);
 
   return parsed;
 }
+
+/** Teto de uma coluna `numeric(10,2)`. */
+export const MAX_AMOUNT = 99_999_999.99;

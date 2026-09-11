@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createAdminClient,
   createAuthenticatedClient,
-} from "../../tests/helpers/supabase";
+} from "@/tests/helpers/supabase";
 import { createVehicle, findVehicle, listVehicles } from "./index";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -49,17 +49,17 @@ const cg160 = {
   year: 2024,
 };
 
-const cg160Completa = {
+const cg160Full = {
   ...cg160,
-  vin: "9C2KC1670NR000001",
+  chassis: "9C2KC1670NR000001",
   renavam: "12345678901",
   color: "Vermelha",
   mileage: 18400,
-  licensingDueOn: "2026-11-30",
+  licensingDueDate: "2026-11-30",
   fipeValue: 14500.5,
-  weeklyRate: 320,
+  weeklyPrice: 320,
   purchaseValue: 13000,
-  purchasedOn: "2025-02-10",
+  purchaseDate: "2025-02-10",
   notes: "Baú instalado pelo dono anterior.",
 };
 
@@ -67,10 +67,10 @@ describe("cadastro completo", () => {
   it("devolve na leitura tudo o que o gestor preencheu", async () => {
     const manager = await createManager();
 
-    const created = await createVehicle(manager.client, cg160Completa);
+    const created = await createVehicle(manager.client, cg160Full);
     const found = await findVehicle(manager.client, created.id);
 
-    expect(found).toMatchObject(cg160Completa);
+    expect(found).toMatchObject(cg160Full);
   });
 
   it("grava o veículo como moto, sem a interface escolher", async () => {
@@ -104,9 +104,9 @@ describe("cadastro completo", () => {
     const tenantB = await createManager();
     await createVehicle(tenantA.client, cg160);
 
-    const doTenantB = await createVehicle(tenantB.client, cg160);
+    const vehicleOfTenantB = await createVehicle(tenantB.client, cg160);
 
-    expect(doTenantB.plate).toBe(cg160.plate);
+    expect(vehicleOfTenantB.plate).toBe(cg160.plate);
   });
 });
 

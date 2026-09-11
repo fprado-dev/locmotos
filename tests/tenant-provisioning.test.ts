@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createAdminClient,
   createAuthenticatedClient,
-} from "./helpers/supabase";
-import { createVehicle, listVehicles } from "../modules/fleet";
+} from "@/tests/helpers/supabase";
+import { createVehicle, listVehicles } from "@/modules/fleet";
 
 const cleanups: Array<() => Promise<void>> = [];
 

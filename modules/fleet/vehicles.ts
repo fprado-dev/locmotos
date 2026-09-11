@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { UserError } from "@/lib/user-error";
 
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
@@ -10,15 +11,15 @@ export type Vehicle = {
   year: number;
   /** A v1 só opera motos, mas o modelo não presume isso. */
   category: string;
-  vin: string | null;
+  chassis: string | null;
   renavam: string | null;
   color: string | null;
   mileage: number | null;
-  licensingDueOn: string | null;
+  licensingDueDate: string | null;
   fipeValue: number | null;
-  weeklyRate: number | null;
+  weeklyPrice: number | null;
   purchaseValue: number | null;
-  purchasedOn: string | null;
+  purchaseDate: string | null;
   notes: string | null;
   createdAt: string;
 };
@@ -26,22 +27,24 @@ export type Vehicle = {
 /**
  * O que o gestor preenche ao cadastrar.
  *
- * `category` fica de fora: quem decide é o default da coluna. `tenantId`
- * também, e pelo mesmo motivo — a aplicação não escolhe nenhum dos dois.
+ * `tenantId` fica de fora: quem carimba é o banco, a partir do JWT.
+ * `category` é opcional — a v1 só oferece motos, mas quem fixa isso é a
+ * interface, não o modelo.
  */
 export type NewVehicle = Pick<Vehicle, "plate" | "brand" | "model" | "year"> &
   Partial<
     Pick<
       Vehicle,
-      | "vin"
+      | "category"
+      | "chassis"
       | "renavam"
       | "color"
       | "mileage"
-      | "licensingDueOn"
+      | "licensingDueDate"
       | "fipeValue"
-      | "weeklyRate"
+      | "weeklyPrice"
       | "purchaseValue"
-      | "purchasedOn"
+      | "purchaseDate"
       | "notes"
     >
   >;
@@ -55,15 +58,15 @@ type VehicleRow = {
   model: string;
   year: number;
   category: string;
-  vin: string | null;
+  chassis: string | null;
   renavam: string | null;
   color: string | null;
   mileage: number | null;
-  licensing_due_on: string | null;
+  licensing_due_date: string | null;
   fipe_value: number | string | null;
-  weekly_rate: number | string | null;
+  weekly_price: number | string | null;
   purchase_value: number | string | null;
-  purchased_on: string | null;
+  purchase_date: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -84,15 +87,15 @@ function toVehicle(row: VehicleRow): Vehicle {
     model: row.model,
     year: row.year,
     category: row.category,
-    vin: row.vin,
+    chassis: row.chassis,
     renavam: row.renavam,
     color: row.color,
     mileage: row.mileage,
-    licensingDueOn: row.licensing_due_on,
+    licensingDueDate: row.licensing_due_date,
     fipeValue: toAmount(row.fipe_value),
-    weeklyRate: toAmount(row.weekly_rate),
+    weeklyPrice: toAmount(row.weekly_price),
     purchaseValue: toAmount(row.purchase_value),
-    purchasedOn: row.purchased_on,
+    purchaseDate: row.purchase_date,
     notes: row.notes,
     createdAt: row.created_at,
   };
@@ -103,18 +106,19 @@ function toRow(vehicle: NewVehicle) {
     // A placa é a mesma escrita em qualquer caixa. Normalizar aqui mantém a
     // lista legível; a unicidade em si quem garante é o índice no banco.
     plate: vehicle.plate.trim().toUpperCase(),
+    category: vehicle.category,
     brand: vehicle.brand,
     model: vehicle.model,
     year: vehicle.year,
-    vin: vehicle.vin,
+    chassis: vehicle.chassis,
     renavam: vehicle.renavam,
     color: vehicle.color,
     mileage: vehicle.mileage,
-    licensing_due_on: vehicle.licensingDueOn,
+    licensing_due_date: vehicle.licensingDueDate,
     fipe_value: vehicle.fipeValue,
-    weekly_rate: vehicle.weeklyRate,
+    weekly_price: vehicle.weeklyPrice,
     purchase_value: vehicle.purchaseValue,
-    purchased_on: vehicle.purchasedOn,
+    purchase_date: vehicle.purchaseDate,
     notes: vehicle.notes,
   };
 }
@@ -128,13 +132,13 @@ function toRow(vehicle: NewVehicle) {
  */
 function toDomainError(error: PostgrestError, plate: string): Error {
   if (error.code === "23505") {
-    return new Error(
+    return new UserError(
       `Já existe um veículo com a placa ${plate} nesta locadora.`,
     );
   }
 
   if (error.code === "23514" && error.message.includes("plate_not_blank")) {
-    return new Error("Placa é obrigatória.");
+    return new UserError("Placa é obrigatória.");
   }
 
   return error;
