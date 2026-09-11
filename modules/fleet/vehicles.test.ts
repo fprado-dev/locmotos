@@ -49,6 +49,67 @@ const cg160 = {
   year: 2024,
 };
 
+const cg160Completa = {
+  ...cg160,
+  vin: "9C2KC1670NR000001",
+  renavam: "12345678901",
+  color: "Vermelha",
+  mileage: 18400,
+  licensingDueOn: "2026-11-30",
+  fipeValue: 14500.5,
+  weeklyRate: 320,
+  purchaseValue: 13000,
+  purchasedOn: "2025-02-10",
+  notes: "Baú instalado pelo dono anterior.",
+};
+
+describe("cadastro completo", () => {
+  it("devolve na leitura tudo o que o gestor preencheu", async () => {
+    const manager = await createManager();
+
+    const created = await createVehicle(manager.client, cg160Completa);
+    const found = await findVehicle(manager.client, created.id);
+
+    expect(found).toMatchObject(cg160Completa);
+  });
+
+  it("grava o veículo como moto, sem a interface escolher", async () => {
+    const manager = await createManager();
+
+    const created = await createVehicle(manager.client, cg160);
+
+    expect(created.category).toBe("motorcycle");
+  });
+
+  it("recusa cadastro sem placa", async () => {
+    const manager = await createManager();
+
+    await expect(
+      createVehicle(manager.client, { ...cg160, plate: "   " }),
+    ).rejects.toThrow(/placa/i);
+  });
+
+  it("recusa a mesma placa duas vezes na mesma locadora", async () => {
+    const manager = await createManager();
+    await createVehicle(manager.client, cg160);
+
+    await expect(
+      // Caixa diferente é a mesma placa.
+      createVehicle(manager.client, { ...cg160, plate: "abc1d23" }),
+    ).rejects.toThrow(/ABC1D23/);
+  });
+
+  it("aceita a mesma placa em locadoras diferentes", async () => {
+    const tenantA = await createManager();
+    const tenantB = await createManager();
+    await createVehicle(tenantA.client, cg160);
+
+    const doTenantB = await createVehicle(tenantB.client, cg160);
+
+    expect(doTenantB.plate).toBe(cg160.plate);
+  });
+});
+
 describe("frota", () => {
   it("mostra na lista o veículo que o gestor cadastrou", async () => {
     const manager = await createManager();

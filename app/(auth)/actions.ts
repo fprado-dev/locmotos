@@ -21,8 +21,8 @@ async function callbackUrl(): Promise<string> {
 
 /** Cadastro: cria a conta do gestor e, pelo trigger no banco, a locadora dele. */
 export async function signUp(formData: FormData) {
-  const tenantName = requiredField(formData, "tenantName");
-  const email = requiredField(formData, "email");
+  const tenantName = requiredField(formData, "tenantName", "Nome da locadora");
+  const email = requiredField(formData, "email", "E-mail");
 
   const client = await createClient();
   const { error } = await client.auth.signInWithOtp({
@@ -42,7 +42,7 @@ export async function signUp(formData: FormData) {
 
 /** Login: manda o link mágico para quem já tem conta. */
 export async function signIn(formData: FormData) {
-  const email = requiredField(formData, "email");
+  const email = requiredField(formData, "email", "E-mail");
 
   const client = await createClient();
   const { error } = await client.auth.signInWithOtp({

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
@@ -8,10 +8,43 @@ export type Vehicle = {
   brand: string;
   model: string;
   year: number;
+  /** A v1 só opera motos, mas o modelo não presume isso. */
+  category: string;
+  vin: string | null;
+  renavam: string | null;
+  color: string | null;
+  mileage: number | null;
+  licensingDueOn: string | null;
+  fipeValue: number | null;
+  weeklyRate: number | null;
+  purchaseValue: number | null;
+  purchasedOn: string | null;
+  notes: string | null;
   createdAt: string;
 };
 
-export type NewVehicle = Pick<Vehicle, "plate" | "brand" | "model" | "year">;
+/**
+ * O que o gestor preenche ao cadastrar.
+ *
+ * `category` fica de fora: quem decide é o default da coluna. `tenantId`
+ * também, e pelo mesmo motivo — a aplicação não escolhe nenhum dos dois.
+ */
+export type NewVehicle = Pick<Vehicle, "plate" | "brand" | "model" | "year"> &
+  Partial<
+    Pick<
+      Vehicle,
+      | "vin"
+      | "renavam"
+      | "color"
+      | "mileage"
+      | "licensingDueOn"
+      | "fipeValue"
+      | "weeklyRate"
+      | "purchaseValue"
+      | "purchasedOn"
+      | "notes"
+    >
+  >;
 
 /** A linha como o Postgres a devolve. Não sai do módulo. */
 type VehicleRow = {
@@ -21,8 +54,25 @@ type VehicleRow = {
   brand: string;
   model: string;
   year: number;
+  category: string;
+  vin: string | null;
+  renavam: string | null;
+  color: string | null;
+  mileage: number | null;
+  licensing_due_on: string | null;
+  fipe_value: number | string | null;
+  weekly_rate: number | string | null;
+  purchase_value: number | string | null;
+  purchased_on: string | null;
+  notes: string | null;
   created_at: string;
 };
+
+// `numeric` chega como string em algumas versões do PostgREST e como número em
+// outras; quem consome o módulo não deveria precisar saber disso.
+function toAmount(value: number | string | null): number | null {
+  return value === null ? null : Number(value);
+}
 
 // Quem chama o módulo fala o vocabulário do domínio, não o do banco.
 function toVehicle(row: VehicleRow): Vehicle {
@@ -33,8 +83,61 @@ function toVehicle(row: VehicleRow): Vehicle {
     brand: row.brand,
     model: row.model,
     year: row.year,
+    category: row.category,
+    vin: row.vin,
+    renavam: row.renavam,
+    color: row.color,
+    mileage: row.mileage,
+    licensingDueOn: row.licensing_due_on,
+    fipeValue: toAmount(row.fipe_value),
+    weeklyRate: toAmount(row.weekly_rate),
+    purchaseValue: toAmount(row.purchase_value),
+    purchasedOn: row.purchased_on,
+    notes: row.notes,
     createdAt: row.created_at,
   };
+}
+
+function toRow(vehicle: NewVehicle) {
+  return {
+    // A placa é a mesma escrita em qualquer caixa. Normalizar aqui mantém a
+    // lista legível; a unicidade em si quem garante é o índice no banco.
+    plate: vehicle.plate.trim().toUpperCase(),
+    brand: vehicle.brand,
+    model: vehicle.model,
+    year: vehicle.year,
+    vin: vehicle.vin,
+    renavam: vehicle.renavam,
+    color: vehicle.color,
+    mileage: vehicle.mileage,
+    licensing_due_on: vehicle.licensingDueOn,
+    fipe_value: vehicle.fipeValue,
+    weekly_rate: vehicle.weeklyRate,
+    purchase_value: vehicle.purchaseValue,
+    purchased_on: vehicle.purchasedOn,
+    notes: vehicle.notes,
+  };
+}
+
+/**
+ * Erro do Postgres virando recado para o gestor.
+ *
+ * As duas garantias que a tabela impõe — placa preenchida e placa única na
+ * locadora — chegam aqui como código; quem preencheu o formulário precisa de
+ * frase.
+ */
+function toDomainError(error: PostgrestError, plate: string): Error {
+  if (error.code === "23505") {
+    return new Error(
+      `Já existe um veículo com a placa ${plate} nesta locadora.`,
+    );
+  }
+
+  if (error.code === "23514" && error.message.includes("plate_not_blank")) {
+    return new Error("Placa é obrigatória.");
+  }
+
+  return error;
 }
 
 /**
@@ -47,13 +150,15 @@ export async function createVehicle(
   client: SupabaseClient,
   vehicle: NewVehicle,
 ): Promise<Vehicle> {
+  const row = toRow(vehicle);
+
   const { data, error } = await client
     .from("vehicles")
-    .insert(vehicle)
+    .insert(row)
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) throw toDomainError(error, row.plate);
   return toVehicle(data as VehicleRow);
 }
 
