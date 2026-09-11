@@ -1,26 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requiredField } from "@/lib/form";
 import { createClient } from "@/lib/supabase/server";
 import { createVehicle } from "@/modules/fleet";
 
 const CURRENT_YEAR = new Date().getFullYear();
-
-/**
- * FormData chega do browser: nada aqui é confiável antes de ser checado.
- *
- * A validação de verdade da placa (formato, unicidade) é outro ticket; isto é
- * só a fronteira mínima para não gravar cadastro vazio.
- */
-function requiredField(formData: FormData, field: string): string {
-  const value = formData.get(field);
-
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`Campo obrigatório: ${field}`);
-  }
-
-  return value.trim();
-}
 
 export async function addVehicle(formData: FormData) {
   // `year` é smallint no banco: sem faixa aqui, 99999 vira erro 500 de overflow.

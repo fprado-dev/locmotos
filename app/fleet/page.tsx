@@ -1,9 +1,8 @@
+import { signOut } from "@/app/(auth)/actions";
+import { buttonClass, fieldClass } from "@/app/ui";
 import { createClient } from "@/lib/supabase/server";
 import { listVehicles } from "@/modules/fleet";
 import { addVehicle } from "./actions";
-
-const fieldClass =
-  "rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700";
 
 export default async function FleetPage() {
   const client = await createClient();
@@ -11,7 +10,14 @@ export default async function FleetPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-8">
-      <h1 className="text-2xl font-semibold">Frota</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Frota</h1>
+        <form action={signOut}>
+          <button type="submit" className="text-zinc-500 underline">
+            Sair
+          </button>
+        </form>
+      </div>
 
       <form action={addVehicle} className="flex flex-wrap items-end gap-3">
         <input
@@ -39,10 +45,7 @@ export default async function FleetPage() {
           className={`${fieldClass} w-24`}
           required
         />
-        <button
-          type="submit"
-          className="rounded bg-black px-4 py-2 text-white dark:bg-white dark:text-black"
-        >
+        <button type="submit" className={buttonClass}>
           Cadastrar
         </button>
       </form>

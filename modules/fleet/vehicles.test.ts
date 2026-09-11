@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createAdminClient,
@@ -19,16 +18,24 @@ afterEach(async () => {
  * isolamento rodam a mesma função como pessoas de locadoras diferentes.
  */
 async function createManager() {
-  const tenantId = randomUUID();
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("tenants")
+    .insert({ name: "Locadora de teste" })
+    .select("id")
+    .single();
+  if (error) throw error;
+  const tenantId = data.id as string;
+
   const { client, cleanup } = await createAuthenticatedClient({
     appMetadata: { tenant_id: tenantId },
   });
 
-  const admin = createAdminClient();
   cleanups.push(async () => {
-    // Os testes batem num projeto real (docs/adr/0006): o veículo criado aqui
-    // some junto com o usuário.
-    await admin.from("vehicles").delete().eq("tenant_id", tenantId);
+    // Os testes batem num projeto real (docs/adr/0006): a locadora criada aqui
+    // some, e leva os veículos junto (on delete cascade).
+    await admin.from("tenants").delete().eq("id", tenantId);
     await cleanup();
   });
 
