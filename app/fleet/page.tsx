@@ -1,6 +1,7 @@
 import { signOut } from "@/app/(auth)/actions";
 import { createClient } from "@/lib/supabase/server";
 import { listVehicles } from "@/modules/fleet";
+import { StatusSelect } from "./status-select";
 import { VehicleForm } from "./vehicle-form";
 
 export default async function FleetPage() {
@@ -25,7 +26,10 @@ export default async function FleetPage() {
       ) : (
         <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
           {vehicles.map((vehicle) => (
-            <li key={vehicle.id} className="flex gap-4 py-3">
+            <li
+              key={vehicle.id}
+              className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3"
+            >
               <span className="font-mono">{vehicle.plate}</span>
               <span>
                 {vehicle.brand} {vehicle.model}
@@ -34,6 +38,7 @@ export default async function FleetPage() {
               {vehicle.color && (
                 <span className="text-zinc-500">{vehicle.color}</span>
               )}
+              <StatusSelect id={vehicle.id} status={vehicle.status} />
             </li>
           ))}
         </ul>
