@@ -1,15 +1,14 @@
 import { signOut } from "@/app/(auth)/actions";
-import { buttonClass, fieldClass } from "@/app/ui";
 import { createClient } from "@/lib/supabase/server";
 import { listVehicles } from "@/modules/fleet";
-import { addVehicle } from "./actions";
+import { VehicleForm } from "./vehicle-form";
 
 export default async function FleetPage() {
   const client = await createClient();
   const vehicles = await listVehicles(client);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-8">
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Frota</h1>
         <form action={signOut}>
@@ -19,36 +18,7 @@ export default async function FleetPage() {
         </form>
       </div>
 
-      <form action={addVehicle} className="flex flex-wrap items-end gap-3">
-        <input
-          name="plate"
-          placeholder="Placa"
-          className={fieldClass}
-          required
-        />
-        <input
-          name="brand"
-          placeholder="Marca"
-          className={fieldClass}
-          required
-        />
-        <input
-          name="model"
-          placeholder="Modelo"
-          className={fieldClass}
-          required
-        />
-        <input
-          name="year"
-          type="number"
-          placeholder="Ano"
-          className={`${fieldClass} w-24`}
-          required
-        />
-        <button type="submit" className={buttonClass}>
-          Cadastrar
-        </button>
-      </form>
+      <VehicleForm />
 
       {vehicles.length === 0 ? (
         <p className="text-zinc-500">Nenhum veículo cadastrado.</p>
@@ -61,6 +31,9 @@ export default async function FleetPage() {
                 {vehicle.brand} {vehicle.model}
               </span>
               <span className="text-zinc-500">{vehicle.year}</span>
+              {vehicle.color && (
+                <span className="text-zinc-500">{vehicle.color}</span>
+              )}
             </li>
           ))}
         </ul>
