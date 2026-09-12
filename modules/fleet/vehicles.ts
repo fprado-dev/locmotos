@@ -231,7 +231,51 @@ export type VehicleFilters = {
   status?: VehicleStatus;
   /** Começa em 1. */
   page?: number;
+  sort?: VehicleSort;
+  direction?: SortDirection;
 };
+
+/**
+ * Por qual coluna a lista vem ordenada — as oito que a tabela oferece.
+ *
+ * Duas não são colunas do banco. "Parada há" é a data de cadastro contada ao
+ * contrário: quanto mais antiga a data, mais dias parada, e por isso ela vem
+ * marcada como invertida. "Veículo" é marca e modelo, nessa ordem — sem o
+ * modelo, duas Honda ficariam em ordem arbitrária entre si.
+ */
+const SORTS = {
+  plate: { column: "plate" },
+  vehicle: { column: "brand", secondary: "model" },
+  year: { column: "year" },
+  mileage: { column: "mileage" },
+  weeklyPrice: { column: "weekly_price" },
+  // O enum do Postgres ordena pela ordem em que foi declarado, que é a ordem
+  // de operação: disponível, reservada, em manutenção, indisponível.
+  status: { column: "status" },
+  daysWithoutRental: { column: "created_at", reversed: true },
+  licensing: { column: "licensing_due_date" },
+} as const satisfies Record<
+  string,
+  { column: string; secondary?: string; reversed?: boolean }
+>;
+
+/** As chaves de ordenação, para quem precisa validar o que veio da URL. */
+export const VEHICLE_SORTS = Object.keys(SORTS) as VehicleSort[];
+
+export type VehicleSort = keyof typeof SORTS;
+
+export type SortDirection = "asc" | "desc";
+
+/**
+ * Como a lista chega quando ninguém pediu ordem.
+ *
+ * A moto mais parada primeiro: é a que está custando dinheiro, e é por ela que
+ * o gestor abre a tela.
+ */
+export const DEFAULT_VEHICLE_SORT: {
+  sort: VehicleSort;
+  direction: SortDirection;
+} = { sort: "daysWithoutRental", direction: "desc" };
 
 // `%`, `_` e `*` são curinga para o PostgREST. O gestor está digitando uma
 // placa, não um padrão de busca: os curingas somem em vez de virar sintaxe.
@@ -240,11 +284,12 @@ function contains(term: string): string {
 }
 
 /**
- * Os veículos da locadora de quem está logado, do mais novo para o mais antigo.
+ * Uma página de veículos da locadora de quem está logado.
  *
- * `hasMore` diz se existe página seguinte. Ele sai de uma linha a mais pedida
- * ao banco — mais barato que um `count` exato, que varreria a frota inteira a
- * cada busca só para escrever um número na tela.
+ * `total` é quantos veículos passaram pelo filtro, não quantos vieram na
+ * página: é o N do "1–20 de N" no rodapé da lista. Ele custa um `count` exato
+ * por busca — dentro de uma locadora isso é contar dezenas de linhas, e é o
+ * que permite ao gestor saber em quantas páginas o filtro caiu.
  *
  * ponytail: busca por pedaço de placa é varredura dentro da locadora; índice
  * trigram (`pg_trgm`) quando uma frota passar de alguns milhares de motos.
@@ -252,32 +297,134 @@ function contains(term: string): string {
 export async function listVehicles(
   client: SupabaseClient,
   filters: VehicleFilters = {},
-): Promise<{ vehicles: Vehicle[]; hasMore: boolean }> {
-  // Veículo com baixa não está mais na frota. O filtro vive aqui, e não numa
-  // policy, porque a policy de update precisa continuar alcançando a linha
-  // para dar a baixa.
-  let query = client.from("vehicles").select(COLUMNS).is("deleted_at", null);
+): Promise<{ vehicles: Vehicle[]; hasMore: boolean; total: number }> {
+  // O mesmo recorte responde às duas perguntas da tela: quais veículos entram
+  // nesta página, e quantos passaram pelo filtro.
+  function scoped(count?: { count: "exact"; head: true }) {
+    // Veículo com baixa não está mais na frota. O filtro vive aqui, e não numa
+    // policy, porque a policy de update precisa continuar alcançando a linha
+    // para dar a baixa.
+    let query = client
+      .from("vehicles")
+      .select(COLUMNS, count)
+      .is("deleted_at", null);
 
-  if (filters.plate) query = query.ilike("plate", contains(filters.plate));
-  if (filters.brand) query = query.ilike("brand", contains(filters.brand));
-  if (filters.model) query = query.ilike("model", contains(filters.model));
-  if (filters.year) query = query.eq("year", filters.year);
-  if (filters.status) query = query.eq("status", filters.status);
+    if (filters.plate) query = query.ilike("plate", contains(filters.plate));
+    if (filters.brand) query = query.ilike("brand", contains(filters.brand));
+    if (filters.model) query = query.ilike("model", contains(filters.model));
+    if (filters.year) query = query.eq("year", filters.year);
+    if (filters.status) query = query.eq("status", filters.status);
+
+    return query;
+  }
+
+  let query = scoped();
+
+  const order = SORTS[filters.sort ?? DEFAULT_VEHICLE_SORT.sort];
+  const direction = filters.direction ?? DEFAULT_VEHICLE_SORT.direction;
+  const ascending =
+    "reversed" in order ? direction === "desc" : direction === "asc";
+
+  // Data ausente não é urgência: veículo sem licenciamento cai no fim da lista
+  // nos dois sentidos, e não na frente de quem já venceu.
+  query = query.order(order.column, { ascending, nullsFirst: false });
+  if ("secondary" in order) {
+    query = query.order(order.secondary, { ascending, nullsFirst: false });
+  }
+
+  // Desempate por placa, sempre. Sem ele, duas linhas de mesmo valor podem
+  // trocar de lugar entre uma página e a seguinte — e aí a paginação repete
+  // uma moto e esconde outra.
+  query = query.order("plate", { ascending: true });
 
   const from = (Math.max(1, filters.page ?? 1) - 1) * VEHICLES_PER_PAGE;
 
-  const { data, error } = await query
-    .order("created_at", { ascending: false })
-    // `range` é inclusivo nas duas pontas: isto pede VEHICLES_PER_PAGE + 1.
-    .range(from, from + VEHICLES_PER_PAGE);
+  // A contagem vai numa consulta à parte, e não junto com as linhas, porque
+  // PostgREST recusa com 416 o `range` que começa além do fim — e a página
+  // vive na URL, onde qualquer número cabe.
+  const [page, counted] = await Promise.all([
+    // `range` é inclusivo nas duas pontas.
+    query.range(from, from + VEHICLES_PER_PAGE - 1),
+    scoped({ count: "exact", head: true }),
+  ]);
+
+  if (page.error) throw page.error;
+  if (counted.error) throw counted.error;
+
+  const rows = page.data as VehicleRow[];
+  const total = counted.count ?? rows.length;
+  return {
+    vehicles: rows.map(toVehicle),
+    hasMore: from + rows.length < total,
+    total,
+  };
+}
+
+/**
+ * Os números do topo da lista.
+ *
+ * São da frota inteira da locadora, não da página nem do filtro: o gestor abre
+ * a tela para saber quantas motos tem e quantas estão paradas, e essa resposta
+ * não pode mudar porque ele digitou três letras de uma placa.
+ *
+ * ponytail: soma no aplicativo, sobre uma leitura da frota inteira — as regras
+ * de dia de calendário e de prazo já vivem aqui, e repeti-las em SQL seria a
+ * mesma conta em dois lugares. Vira view agregada quando uma locadora passar
+ * de alguns milhares de motos.
+ */
+export type FleetSummary = {
+  total: number;
+  available: number;
+  reserved: number;
+  maintenance: number;
+  unavailable: number;
+  /** Licenciamento vencendo dentro de `LICENSING_WARNING_DAYS`. */
+  licensingDueSoon: number;
+  licensingOverdue: number;
+  /** Soma do valor semanal das disponíveis: o que a frota rende se alugar tudo. */
+  availableWeeklyPrice: number;
+};
+
+export async function fleetSummary(
+  client: SupabaseClient,
+  today = new Date(),
+): Promise<FleetSummary> {
+  const { data, error } = await client
+    .from("vehicles")
+    .select("status, licensing_due_date, weekly_price")
+    .is("deleted_at", null);
 
   if (error) throw error;
 
-  const rows = data as VehicleRow[];
-  return {
-    vehicles: rows.slice(0, VEHICLES_PER_PAGE).map(toVehicle),
-    hasMore: rows.length > VEHICLES_PER_PAGE,
+  const rows = data as Pick<
+    VehicleRow,
+    "status" | "licensing_due_date" | "weekly_price"
+  >[];
+
+  const summary: FleetSummary = {
+    total: rows.length,
+    available: 0,
+    reserved: 0,
+    maintenance: 0,
+    unavailable: 0,
+    licensingDueSoon: 0,
+    licensingOverdue: 0,
+    availableWeeklyPrice: 0,
   };
+
+  for (const row of rows) {
+    summary[row.status] += 1;
+
+    if (row.status === "available") {
+      summary.availableWeeklyPrice += toAmount(row.weekly_price) ?? 0;
+    }
+
+    const alert = licensingAlert(row.licensing_due_date, today);
+    if (alert === "overdue") summary.licensingOverdue += 1;
+    if (alert === "due-soon") summary.licensingDueSoon += 1;
+  }
+
+  return summary;
 }
 
 /**
@@ -496,6 +643,14 @@ function calendarDayOf(date: string): number {
 export function daysWithoutRental(since: string, today = new Date()): number {
   return calendarDay(today) - calendarDay(new Date(since));
 }
+
+/**
+ * A partir de quantos dias parada uma moto merece destaque na lista.
+ *
+ * Trinta dias é onde a locadora perde um ciclo inteiro de cobrança. O número é
+ * de regra, não de arte: mexer nele muda o que a tela grita.
+ */
+export const LONG_STOP_DAYS = 30;
 
 /** Vencido, vencendo, ou nada a dizer. */
 export type LicensingAlert = "overdue" | "due-soon";

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { findVehicle, signedFileUrl } from "@/modules/fleet";
+import { StatusSelect } from "../status-select";
 import { VehicleForm } from "../vehicle-form";
 import { DiscardButton } from "./discard-button";
 import { VehicleFiles } from "./vehicle-files";
@@ -45,9 +46,16 @@ export default async function VehiclePage({
             {vehicle.brand} {vehicle.model}
           </span>
         </h1>
-        <Button variant="ghost" render={<Link href="/fleet" />}>
-          Voltar
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* A situação sai da lista, que agora é de comparar, e passa a ser
+              alterada aqui — até a barra de lote da issue #25 existir. */}
+          <StatusSelect id={vehicle.id} status={vehicle.status} />
+          {/* Base UI não deixa um Button virar link: o `<a>` leva as
+              classes do botão e mantém a semântica de link. */}
+          <Link href="/fleet" className={buttonVariants({ variant: "ghost" })}>
+            Voltar
+          </Link>
+        </div>
       </header>
 
       <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">

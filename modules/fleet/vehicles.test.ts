@@ -7,11 +7,13 @@ import {
   attachVehicleFile,
   createVehicle,
   findVehicle,
+  fleetSummary,
   listVehicles,
   removeVehicle,
   setVehicleStatus,
   signedFileUrl,
   updateVehicle,
+  VEHICLE_SORTS,
   VEHICLES_PER_PAGE,
 } from "./index";
 
@@ -313,11 +315,16 @@ describe("busca e filtros", () => {
 
     const first = await listVehicles(manager.client);
     const second = await listVehicles(manager.client, { page: 2 });
+    // Página que não existe é lista vazia, não erro: a página vive na URL, e
+    // qualquer número cabe lá.
+    const nowhere = await listVehicles(manager.client, { page: 99 });
 
     expect(first.vehicles).toHaveLength(VEHICLES_PER_PAGE);
     expect(first.hasMore).toBe(true);
+    expect(first.total).toBe(VEHICLES_PER_PAGE + 1);
     expect(second.vehicles).toHaveLength(1);
     expect(second.hasMore).toBe(false);
+    expect(nowhere.vehicles).toEqual([]);
     // A página 2 continua de onde a 1 parou, sem repetir nem pular ninguém.
     const ids = [...first.vehicles, ...second.vehicles].map((v) => v.id);
     expect(new Set(ids).size).toBe(VEHICLES_PER_PAGE + 1);
@@ -625,6 +632,175 @@ describe("operador do SaaS", () => {
     expect(await findVehicle(manager.client, moto.id)).toMatchObject({
       status: "available",
       brand: "Honda",
+    });
+  });
+});
+
+describe("ordenação", () => {
+  /**
+   * Uma frota onde "parada há" é diferente em cada moto.
+   *
+   * A data de cadastro é o relógio de "parada há", e ela nasce em `now()`:
+   * para ter uma moto parada há meses o teste precisa recuar a data pelo
+   * admin, que é preparação de cenário, não o comportamento sob teste.
+   */
+  async function fleetWithHistory() {
+    const manager = await createManager();
+    const admin = createAdminClient();
+    // Um relógio só para a frota toda: duas motos com o mesmo "parada há"
+    // precisam ter a MESMA data, senão o que ordena é o milissegundo de
+    // diferença entre dois inserts e o desempate por placa nunca acontece.
+    const clock = Date.now();
+
+    const vehicles = await Promise.all(
+      [
+        // Duas paradas há o mesmo tanto, cadastradas fora de ordem de placa:
+        // é nelas que o desempate aparece.
+        { plate: "SRT0B02", days: 50 },
+        { plate: "SRT0A01", days: 50 },
+        { plate: "SRT0C03", days: 10 },
+      ].map(async ({ plate, days }) => {
+        const vehicle = await createVehicle(manager.client, {
+          ...cg160,
+          plate,
+        });
+        const createdAt = new Date(clock - days * 86_400_000);
+        await admin
+          .from("vehicles")
+          .update({ created_at: createdAt.toISOString() })
+          .eq("id", vehicle.id);
+
+        return { ...vehicle, plate, days };
+      }),
+    );
+
+    return { ...manager, vehicles };
+  }
+
+  let fleet: Awaited<ReturnType<typeof fleetWithHistory>>;
+
+  beforeAll(async () => {
+    fleet = await fleetWithHistory();
+  });
+
+  it("põe a moto mais parada na frente, e desempata por placa", async () => {
+    const { vehicles } = await listVehicles(fleet.client, {
+      sort: "daysWithoutRental",
+      direction: "desc",
+    });
+
+    // As duas de 50 dias primeiro, em ordem de placa; a de 10 por último.
+    expect(vehicles.map((vehicle) => vehicle.plate)).toEqual([
+      "SRT0A01",
+      "SRT0B02",
+      "SRT0C03",
+    ]);
+  });
+
+  it("inverte quando o gestor pede a ordem contrária", async () => {
+    const { vehicles } = await listVehicles(fleet.client, {
+      sort: "daysWithoutRental",
+      direction: "asc",
+    });
+
+    expect(vehicles.map((vehicle) => vehicle.plate)).toEqual([
+      "SRT0C03",
+      "SRT0A01",
+      "SRT0B02",
+    ]);
+  });
+
+  it("é a ordem de quem não pediu ordem nenhuma", async () => {
+    const { vehicles } = await listVehicles(fleet.client);
+
+    expect(vehicles.map((vehicle) => vehicle.plate)).toEqual([
+      "SRT0A01",
+      "SRT0B02",
+      "SRT0C03",
+    ]);
+  });
+
+  it("ordena por qualquer uma das colunas da tabela", async () => {
+    const ordered = await Promise.all(
+      VEHICLE_SORTS.map(async (sort) => {
+        const { vehicles } = await listVehicles(fleet.client, { sort });
+        return vehicles.length;
+      }),
+    );
+
+    expect(ordered).toEqual(VEHICLE_SORTS.map(() => 3));
+  });
+});
+
+describe("os números da frota", () => {
+  it("conta a frota inteira, não a página nem o filtro", async () => {
+    const manager = await createManager();
+    const hoje = new Date("2026-09-11T12:00:00Z");
+
+    // Uma disponível com preço, outra disponível sem preço, e uma de cada
+    // situação restante: o card de receita soma só as disponíveis.
+    await createVehicle(manager.client, {
+      ...cg160,
+      plate: "SUM0A01",
+      weeklyPrice: 320,
+      // Vencido: ainda conta, e conta como vencido, não como vencendo.
+      licensingDueDate: "2026-02-01",
+    });
+    await createVehicle(manager.client, {
+      ...cg160,
+      plate: "SUM0A02",
+      weeklyPrice: null,
+      licensingDueDate: "2026-10-01",
+    });
+    const reservada = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "SUM0A03",
+      weeklyPrice: 500,
+      // Fora da janela de aviso: não entra em nenhum dos dois contadores.
+      licensingDueDate: "2027-08-01",
+    });
+    const manutenção = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "SUM0A04",
+      weeklyPrice: 500,
+    });
+    const indisponível = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "SUM0A05",
+    });
+    await setVehicleStatus(manager.client, reservada.id, "reserved");
+    await setVehicleStatus(manager.client, manutenção.id, "maintenance");
+    await setVehicleStatus(manager.client, indisponível.id, "unavailable");
+
+    // Moto com baixa saiu da frota: não conta em lugar nenhum.
+    const baixada = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "SUM0A06",
+      weeklyPrice: 999,
+    });
+    await removeVehicle(manager.client, baixada.id);
+
+    expect(await fleetSummary(manager.client, hoje)).toEqual({
+      total: 5,
+      available: 2,
+      reserved: 1,
+      maintenance: 1,
+      unavailable: 1,
+      licensingDueSoon: 1,
+      licensingOverdue: 1,
+      availableWeeklyPrice: 320,
+    });
+  });
+
+  it("não enxerga a frota de outra locadora", async () => {
+    const vizinha = await createManager();
+    const recémChegada = await createManager();
+    await createVehicle(vizinha.client, { ...cg160, plate: "SUM0B01" });
+
+    expect(await fleetSummary(recémChegada.client)).toMatchObject({
+      total: 0,
+      available: 0,
+      availableWeeklyPrice: 0,
     });
   });
 });
