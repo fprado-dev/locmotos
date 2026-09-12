@@ -7,10 +7,14 @@ import {
   attachVehicleFile,
   createVehicle,
   findVehicle,
+  fleetFilterOptions,
+  fleetStatusCounts,
   fleetSummary,
   listVehicles,
   removeVehicle,
+  removeVehicles,
   setVehicleStatus,
+  setVehiclesStatus,
   signedFileUrl,
   updateVehicle,
   VEHICLE_SORTS,
@@ -802,5 +806,154 @@ describe("os números da frota", () => {
       available: 0,
       availableWeeklyPrice: 0,
     });
+  });
+});
+
+describe("as opções do filtro", () => {
+  it("oferecem só o que a frota da locadora tem", async () => {
+    const manager = await createManager();
+    const vizinha = await createManager();
+
+    await createVehicle(manager.client, {
+      ...cg160,
+      plate: "OPT0A01",
+      brand: "Honda",
+      model: "CG 160",
+      year: 2024,
+    });
+    await createVehicle(manager.client, {
+      ...cg160,
+      plate: "OPT0A02",
+      brand: "Honda",
+      model: "Biz 125",
+      year: 2021,
+    });
+    // Mesma marca e modelo repetidos não viram duas opções.
+    await createVehicle(manager.client, {
+      ...cg160,
+      plate: "OPT0A03",
+      brand: "Honda",
+      model: "CG 160",
+      year: 2024,
+    });
+    // A moto da vizinha não pode aparecer no select de ninguém: seria o
+    // vazamento mais silencioso possível, um nome de marca num dropdown.
+    await createVehicle(vizinha.client, {
+      ...cg160,
+      plate: "OPT0B01",
+      brand: "Yamaha",
+      model: "Factor 150",
+      year: 2019,
+    });
+
+    expect(await fleetFilterOptions(manager.client)).toEqual({
+      brands: ["Honda"],
+      models: ["Biz 125", "CG 160"],
+      // Mais nova primeiro: é por ela que se procura.
+      years: [2024, 2021],
+    });
+  });
+});
+
+describe("os contadores dos chips de situação", () => {
+  it("mudam quando outro filtro entra", async () => {
+    const manager = await createManager();
+
+    const honda = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "CHP0A01",
+      brand: "Honda",
+    });
+    await createVehicle(manager.client, {
+      ...cg160,
+      plate: "CHP0A02",
+      brand: "Honda",
+    });
+    const yamaha = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "CHP0A03",
+      brand: "Yamaha",
+    });
+    await setVehicleStatus(manager.client, honda.id, "maintenance");
+    await setVehicleStatus(manager.client, yamaha.id, "maintenance");
+
+    // Sem filtro: a frota inteira.
+    expect(await fleetStatusCounts(manager.client)).toEqual({
+      all: 3,
+      available: 1,
+      reserved: 0,
+      maintenance: 2,
+      unavailable: 0,
+    });
+
+    // Com a marca escolhida, o chip promete o que vai entregar.
+    expect(await fleetStatusCounts(manager.client, { brand: "Honda" })).toEqual(
+      {
+        all: 2,
+        available: 1,
+        reserved: 0,
+        maintenance: 1,
+        unavailable: 0,
+      },
+    );
+
+    // E a situação já escolhida é a única que o recorte ignora: com "Em
+    // manutenção" ativo, o chip "Disponível" continua sabendo dizer quantas
+    // são, senão o gestor não teria como voltar atrás.
+    expect(
+      await fleetStatusCounts(manager.client, { status: "maintenance" }),
+    ).toEqual({
+      all: 3,
+      available: 1,
+      reserved: 0,
+      maintenance: 2,
+      unavailable: 0,
+    });
+  });
+});
+
+describe("ações em lote", () => {
+  it("não tocam no veículo de outra locadora que veio no meio do lote", async () => {
+    const manager = await createManager();
+    const vizinha = await createManager();
+
+    const minha = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "LOT0B01",
+    });
+    // O id vem do browser: nada impede alguém de colar o id da moto alheia no
+    // meio dos seus. Quem recusa é a RLS, não uma conferência no aplicativo.
+    const alheia = await createVehicle(vizinha.client, {
+      ...cg160,
+      plate: "LOT0B02",
+    });
+
+    const alteradas = await setVehiclesStatus(
+      manager.client,
+      [minha.id, alheia.id],
+      "unavailable",
+    );
+
+    expect(alteradas.map((v) => v.id)).toEqual([minha.id]);
+    expect(await findVehicle(vizinha.client, alheia.id)).toMatchObject({
+      status: "available",
+    });
+
+    // A baixa em lote passa pela mesma peneira, e é a que dói se falhar.
+    const baixadas = await removeVehicles(manager.client, [
+      minha.id,
+      alheia.id,
+    ]);
+
+    expect(baixadas.map((v) => v.id)).toEqual([minha.id]);
+    expect(await findVehicle(manager.client, minha.id)).toBeNull();
+    expect(await findVehicle(vizinha.client, alheia.id)).not.toBeNull();
+
+    // Lote vazio não vira consulta: `in.()` sem nada dentro é sintaxe que o
+    // PostgREST recusa, e "nada selecionado" não é erro do gestor.
+    expect(await setVehiclesStatus(manager.client, [], "maintenance")).toEqual(
+      [],
+    );
+    expect(await removeVehicles(manager.client, [])).toEqual([]);
   });
 });

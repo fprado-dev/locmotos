@@ -278,9 +278,60 @@ export const DEFAULT_VEHICLE_SORT: {
 } = { sort: "daysWithoutRental", direction: "desc" };
 
 // `%`, `_` e `*` são curinga para o PostgREST. O gestor está digitando uma
-// placa, não um padrão de busca: os curingas somem em vez de virar sintaxe.
+// placa ou escolhendo uma marca, não um padrão de busca: os curingas somem em
+// vez de virar sintaxe.
 function contains(term: string): string {
-  return `%${term.trim().replace(/[%_*\\]/g, "")}%`;
+  return `%${exact(term)}%`;
+}
+
+// Sem curinga nenhum, `ilike` é igualdade que não liga para caixa — o que
+// serve tanto para o que veio do select quanto para uma URL digitada à mão.
+function exact(term: string): string {
+  return term.trim().replace(/[%_*\\]/g, "");
+}
+
+/**
+ * Os filtros da tela como uma lista de condições, sem consulta nenhuma.
+ *
+ * A lista e os contadores dos chips têm que concordar: um chip dizendo "9
+ * disponíveis" sobre uma lista de 4 seria pior que não ter contador. Por isso
+ * os dois montam o recorte daqui, e o chip só pede para ignorar a situação — o
+ * contador dele é justamente "quantas seriam, se a situação fosse esta".
+ *
+ * São condições e não uma consulta pronta porque encarar o builder do
+ * PostgREST por fora faz o TypeScript desistir: ele carrega o schema inteiro
+ * em parâmetros de tipo, e uma função genérica em cima disso estoura o limite
+ * de instanciação. Cada consulta aplica a lista sobre o próprio builder.
+ *
+ * Placa casa por pedaço, que é como se procura uma moto com a placa na mão.
+ * Marca e modelo casam inteiros: as opções saem da própria frota, e "CG 160"
+ * por pedaço traria "CG 160 Start" junto.
+ */
+type Condition = { op: "ilike" | "eq"; column: string; value: string | number };
+
+function conditions(
+  filters: VehicleFilters,
+  { skipStatus = false } = {},
+): Condition[] {
+  const list: Condition[] = [];
+
+  if (filters.plate) {
+    list.push({ op: "ilike", column: "plate", value: contains(filters.plate) });
+  }
+  if (filters.brand) {
+    list.push({ op: "ilike", column: "brand", value: exact(filters.brand) });
+  }
+  if (filters.model) {
+    list.push({ op: "ilike", column: "model", value: exact(filters.model) });
+  }
+  if (filters.year) {
+    list.push({ op: "eq", column: "year", value: filters.year });
+  }
+  if (filters.status && !skipStatus) {
+    list.push({ op: "eq", column: "status", value: filters.status });
+  }
+
+  return list;
 }
 
 /**
@@ -309,11 +360,12 @@ export async function listVehicles(
       .select(COLUMNS, count)
       .is("deleted_at", null);
 
-    if (filters.plate) query = query.ilike("plate", contains(filters.plate));
-    if (filters.brand) query = query.ilike("brand", contains(filters.brand));
-    if (filters.model) query = query.ilike("model", contains(filters.model));
-    if (filters.year) query = query.eq("year", filters.year);
-    if (filters.status) query = query.eq("status", filters.status);
+    for (const { op, column, value } of conditions(filters)) {
+      query =
+        op === "ilike"
+          ? query.ilike(column, value as string)
+          : query.eq(column, value);
+    }
 
     return query;
   }
@@ -428,6 +480,96 @@ export async function fleetSummary(
 }
 
 /**
+ * O que a frota da locadora tem a oferecer aos selects do filtro.
+ *
+ * Marca, modelo e ano viram lista fechada em vez de campo de texto, e a lista
+ * é a da própria frota: não adianta oferecer Yamaha a quem só tem Honda. Vem
+ * da frota inteira e não do filtro corrente — um select que só oferece o que
+ * já está selecionado não deixa o gestor trocar de ideia.
+ *
+ * ponytail: distintos calculados no aplicativo sobre uma leitura da frota
+ * inteira, como em `fleetSummary`. Vira `select distinct` quando uma locadora
+ * passar de alguns milhares de motos.
+ */
+export type FleetFilterOptions = {
+  brands: string[];
+  models: string[];
+  years: number[];
+};
+
+export async function fleetFilterOptions(
+  client: SupabaseClient,
+): Promise<FleetFilterOptions> {
+  const { data, error } = await client
+    .from("vehicles")
+    .select("brand, model, year")
+    .is("deleted_at", null);
+
+  if (error) throw error;
+
+  const rows = data as Pick<VehicleRow, "brand" | "model" | "year">[];
+  const brands = new Set<string>();
+  const models = new Set<string>();
+  const years = new Set<number>();
+
+  for (const row of rows) {
+    brands.add(row.brand);
+    models.add(row.model);
+    years.add(row.year);
+  }
+
+  return {
+    brands: [...brands].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    models: [...models].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    // Ano mais novo primeiro: é por ele que se procura uma moto recente.
+    years: [...years].sort((a, b) => b - a),
+  };
+}
+
+/**
+ * Quantas motos cada chip de situação mostraria, com os outros filtros de pé.
+ *
+ * O contador do chip responde "quantas sobrariam se eu clicasse aqui", não
+ * "quantas existem": filtrar por Honda tem que mexer nos números, senão o chip
+ * promete 9 disponíveis e entrega 4. Daí a situação corrente ser ignorada no
+ * recorte — os outros filtros, não.
+ */
+export type FleetStatusCounts = Record<VehicleStatus | "all", number>;
+
+export async function fleetStatusCounts(
+  client: SupabaseClient,
+  filters: VehicleFilters = {},
+): Promise<FleetStatusCounts> {
+  let query = client.from("vehicles").select("status").is("deleted_at", null);
+
+  for (const { op, column, value } of conditions(filters, {
+    skipStatus: true,
+  })) {
+    query =
+      op === "ilike"
+        ? query.ilike(column, value as string)
+        : query.eq(column, value);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+
+  const rows = data as Pick<VehicleRow, "status">[];
+  const counts: FleetStatusCounts = {
+    all: rows.length,
+    available: 0,
+    reserved: 0,
+    maintenance: 0,
+    unavailable: 0,
+  };
+
+  for (const row of rows) counts[row.status] += 1;
+
+  return counts;
+}
+
+/**
  * Um veículo pelo id, ou `null`.
  *
  * Veículo de outra locadora cai no mesmo `null` de veículo inexistente: a RLS
@@ -449,27 +591,43 @@ export async function findVehicle(
 }
 
 /**
- * Altera a situação de um veículo.
+ * Altera a situação de um lote de veículos.
  *
- * Devolve `null` quando nenhuma linha era do gestor: a RLS filtra antes do
- * update, então veículo de outra locadora não é recusado com erro — ele
- * simplesmente não existe para quem pediu, igual em `findVehicle`.
+ * Devolve os que mudaram, que não são necessariamente os que foram pedidos: os
+ * ids vêm do browser, e a RLS filtra antes do update. Veículo de outra
+ * locadora não é recusado com erro — ele simplesmente não está na resposta,
+ * como se não existisse, que é o que `findVehicle` também faz. Quem chamou
+ * compara o tamanho e conta ao gestor o que de fato aconteceu.
+ *
+ * Um update só para o lote inteiro, e não um por id: o lote é uma decisão do
+ * gestor, e meia dúzia de updates soltos poderia deixar metade aplicada.
  */
+export async function setVehiclesStatus(
+  client: SupabaseClient,
+  ids: string[],
+  status: VehicleStatus,
+): Promise<Vehicle[]> {
+  if (ids.length === 0) return [];
+
+  const { data, error } = await client
+    .from("vehicles")
+    .update({ status })
+    .in("id", ids)
+    .is("deleted_at", null)
+    .select(COLUMNS);
+
+  if (error) throw error;
+  return (data as VehicleRow[]).map(toVehicle);
+}
+
+/** A mesma alteração, para uma moto só. Devolve `null` se não era dela. */
 export async function setVehicleStatus(
   client: SupabaseClient,
   id: string,
   status: VehicleStatus,
 ): Promise<Vehicle | null> {
-  const { data, error } = await client
-    .from("vehicles")
-    .update({ status })
-    .eq("id", id)
-    .is("deleted_at", null)
-    .select(COLUMNS)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? toVehicle(data as VehicleRow) : null;
+  const [vehicle] = await setVehiclesStatus(client, [id], status);
+  return vehicle ?? null;
 }
 
 /**
@@ -501,27 +659,37 @@ export async function updateVehicle(
 }
 
 /**
- * Dá baixa num veículo: ele sai da frota e a linha fica.
+ * Dá baixa num lote de veículos: eles saem da frota e as linhas ficam.
  *
  * A baixa é um `update`, não um `delete` — quem já podia alterar o veículo
  * pode dar baixa nele, e a policy que existe basta. O `is("deleted_at", null)`
- * antes do update faz a segunda baixa devolver `null` em vez de mexer na data
- * da primeira.
+ * antes do update deixa a segunda baixa de fora da resposta em vez de mexer na
+ * data da primeira.
  */
+export async function removeVehicles(
+  client: SupabaseClient,
+  ids: string[],
+): Promise<Vehicle[]> {
+  if (ids.length === 0) return [];
+
+  const { data, error } = await client
+    .from("vehicles")
+    .update({ deleted_at: new Date().toISOString() })
+    .in("id", ids)
+    .is("deleted_at", null)
+    .select(COLUMNS);
+
+  if (error) throw error;
+  return (data as VehicleRow[]).map(toVehicle);
+}
+
+/** A mesma baixa, para uma moto só. Devolve `null` se não era dela. */
 export async function removeVehicle(
   client: SupabaseClient,
   id: string,
 ): Promise<Vehicle | null> {
-  const { data, error } = await client
-    .from("vehicles")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id)
-    .is("deleted_at", null)
-    .select(COLUMNS)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? toVehicle(data as VehicleRow) : null;
+  const [vehicle] = await removeVehicles(client, [id]);
+  return vehicle ?? null;
 }
 
 /** A coluna onde o caminho de cada anexo é guardado. */
