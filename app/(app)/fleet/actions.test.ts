@@ -60,10 +60,13 @@ describe("cadastrar veículo pela tela", () => {
     await signedInManager();
 
     // A placa volta porque o painel fecha no sucesso: o toast que anuncia o
-    // cadastro é escrito depois que o formulário já saiu da tela.
-    expect(await addVehicle({}, form({ plate: "ABC1D23" }))).toEqual({
-      created: { plate: "ABC1D23" },
-    });
+    // cadastro é escrito depois que o formulário já saiu da tela. O id volta
+    // porque é ele que leva a lista até a linha nova, para realçá-la.
+    const state = await addVehicle({}, form({ plate: "ABC1D23" }));
+
+    expect(state.error).toBeUndefined();
+    expect(state.created).toMatchObject({ plate: "ABC1D23" });
+    expect(state.created?.id).toEqual(expect.any(String));
   });
 
   it("explica que a placa já existe, em vez de vazar o erro do Postgres", async () => {

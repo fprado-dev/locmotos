@@ -1,11 +1,19 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Upload } from "lucide-react";
-import { STATUS_LABELS } from "@/app/ui";
+import { AutofillButton } from "@/app/dev/autofill-button";
+import { STATUS_LABELS, VEHICLE_COLORS, vehicleColor } from "@/app/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -15,10 +23,17 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { VEHICLE_STATUSES, type Vehicle } from "@/modules/fleet";
+import {
+  VEHICLE_STATUSES,
+  type Vehicle,
+  type VehicleStatus,
+} from "@/modules/fleet";
 import { addVehicle, editVehicle, type FormState } from "./actions";
 
-/** Um campo do formulário: rótulo em cima, campo embaixo, recado embaixo dele. */
+/** Onde o recado do formulário mora, para os campos poderem apontar para ele. */
+const FORM_ERROR_ID = "vehicle-form-error";
+
+/** Um campo do formulário: rótulo em cima, campo embaixo. */
 function Field({
   name,
   label,
@@ -28,7 +43,7 @@ function Field({
   defaultValue,
   className,
   fieldClassName,
-  error,
+  invalid,
 }: {
   name: string;
   label: string;
@@ -38,7 +53,8 @@ function Field({
   defaultValue?: string;
   className?: string;
   fieldClassName?: string;
-  error?: string;
+  /** O recado é um só, e mora no topo: aqui o campo só se marca como o acusado. */
+  invalid?: boolean;
 }) {
   return (
     <div className={cn("flex flex-col gap-1.5", fieldClassName)}>
@@ -53,19 +69,10 @@ function Field({
         step={step}
         required={required}
         defaultValue={defaultValue}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${name}-error` : undefined}
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby={invalid ? FORM_ERROR_ID : undefined}
         className={className}
       />
-      {error && (
-        <p
-          id={`${name}-error`}
-          role="alert"
-          className="text-xs text-destructive"
-        >
-          {error}
-        </p>
-      )}
     </div>
   );
 }
@@ -99,9 +106,14 @@ export function VehicleForm({
 }: {
   vehicle?: Vehicle;
   onCancel?: () => void;
-  onSaved?: (plate: string) => void;
+  onSaved?: (created: { id: string; plate: string }) => void;
 }) {
   const [crlv, setCrlv] = useState<string | null>(null);
+  // Controlado, e não `defaultValue`: sem valor escolhido o select do Base UI
+  // manda string vazia, e o cadastro morria em "Situação inválida" antes de
+  // chegar ao banco. O painel abre em Disponível, que é como a moto nasce.
+  const [status, setStatus] = useState<VehicleStatus>("available");
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [state, formAction, pending] = useActionState(
     // O aviso de sucesso sai daqui e não de um efeito: o cadastro termina uma
@@ -112,27 +124,53 @@ export function VehicleForm({
         formData,
       );
 
-      if (next.created) onSaved?.(next.created.plate);
+      if (next.created) onSaved?.(next.created);
       return next;
     },
     initialState,
   );
 
-  // Recado sem campo é o que não encosta em nenhum: fica no topo, onde o
-  // gestor esbarra nele antes de procurar o erro campo a campo.
+  // No painel os campos rolam, e o recado costuma nascer fora da vista: o
+  // gestor aperta Salvar, nada visível muda, e ele aperta de novo. Levar o foco
+  // ao campo acusado traz a rolagem junto e diz qual é, para quem enxerga a
+  // tela e para quem a ouve.
+  useEffect(() => {
+    if (!state.error) return;
+
+    const alvo = state.field
+      ? formRef.current?.elements.namedItem(state.field)
+      : formRef.current?.querySelector(`#${FORM_ERROR_ID}`);
+
+    if (alvo instanceof HTMLElement) {
+      alvo.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (state.field) alvo.focus({ preventScroll: true });
+    }
+  }, [state]);
+
+  // O recado aparece sempre no topo, mesmo quando acusa um campo. Já aconteceu
+  // de ele acusar um campo que esta tela não desenha — a situação, que só o
+  // painel oferece — e então não aparecer em canto nenhum: o formulário
+  // limpava e o gestor ficava sem saber o que houve. Um lugar fixo não tem
+  // como sumir.
   //
-  // ponytail: um erro que acuse campo não desenhado nesta tela ficaria mudo;
-  // hoje todos os que acusam campo estão aqui. Se a divergência aparecer, o
-  // conserto é o topo receber o que não achou dono.
-  const geral = state.error && !state.field ? state.error : undefined;
-  const erro = (name: string) =>
-    state.field === name ? state.error : undefined;
+  // O campo acusado não repete a frase: ganha a borda vermelha, o foco, e
+  // aponta para o recado do topo, que é o que o leitor de tela anuncia.
+  const acusado = (name: string) => state.field === name;
 
   const painel = onCancel !== undefined;
 
   return (
     <form
-      action={formAction}
+      ref={formRef}
+      // O envio é `onSubmit` e não `action` porque o React limpa o formulário
+      // assim que uma action passada por `action` termina — inclusive quando
+      // ela volta com erro. Perder catorze campos preenchidos para reler uma
+      // frase de validação é o oposto do que a frase pede.
+      onSubmit={(event) => {
+        event.preventDefault();
+        const dados = new FormData(event.currentTarget);
+        startTransition(() => formAction(dados));
+      }}
       data-autofill
       className={cn(
         "@container flex flex-col",
@@ -149,9 +187,13 @@ export function VehicleForm({
           painel && "min-h-0 flex-1 overflow-y-auto p-6",
         )}
       >
-        {geral && (
-          <p role="alert" className="text-sm text-destructive">
-            {geral}
+        {state.error && (
+          <p
+            id={FORM_ERROR_ID}
+            role="alert"
+            className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {state.error}
           </p>
         )}
 
@@ -163,7 +205,7 @@ export function VehicleForm({
             label="Placa"
             required
             defaultValue={vehicle?.plate}
-            error={erro("plate")}
+            invalid={acusado("plate")}
             // A placa é o que identifica a moto: no painel ela abre o
             // formulário sozinha na linha, e não espremida ao lado da marca.
             fieldClassName="col-span-2 @2xl:col-span-1"
@@ -174,14 +216,14 @@ export function VehicleForm({
             label="Marca"
             required
             defaultValue={vehicle?.brand}
-            error={erro("brand")}
+            invalid={acusado("brand")}
           />
           <Field
             name="model"
             label="Modelo"
             required
             defaultValue={vehicle?.model}
-            error={erro("model")}
+            invalid={acusado("model")}
           />
           <Field
             name="year"
@@ -189,29 +231,34 @@ export function VehicleForm({
             type="number"
             required
             defaultValue={value(vehicle?.year)}
-            error={erro("year")}
+            invalid={acusado("year")}
           />
-          <Field
-            name="color"
-            label="Cor"
-            defaultValue={value(vehicle?.color)}
-            error={erro("color")}
-          />
+          <ColorPicker current={vehicle?.color ?? null} />
           <Field
             name="mileage"
-            label="Quilometragem"
+            label="Km"
             type="number"
             defaultValue={value(vehicle?.mileage)}
-            error={erro("mileage")}
+            invalid={acusado("mileage")}
             className="text-right"
           />
 
           {!vehicle && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="status">Situação</Label>
-              <Select name="status" defaultValue="available">
+              <Select
+                name="status"
+                value={status}
+                onValueChange={(escolhida) =>
+                  setStatus(escolhida as VehicleStatus)
+                }
+              >
                 <SelectTrigger id="status" className="w-full">
-                  <SelectValue />
+                  {/* Sem isto o gatilho mostra o valor cru — "available" em vez
+                      de "Disponível". Quem sabe traduzir é o mapa de rótulos. */}
+                  <SelectValue>
+                    {(valor: VehicleStatus) => STATUS_LABELS[valor]}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {VEHICLE_STATUSES.map((status) => (
@@ -226,58 +273,58 @@ export function VehicleForm({
 
           <Field
             name="weeklyPrice"
-            label="Valor semanal"
+            label="R$/semana"
             type="number"
             step="0.01"
             defaultValue={value(vehicle?.weeklyPrice)}
-            error={erro("weeklyPrice")}
+            invalid={acusado("weeklyPrice")}
             className="text-right"
           />
           <Field
             name="licensingDueDate"
-            label="Licenciamento vence em"
+            label="Licenciamento"
             type="date"
             defaultValue={value(vehicle?.licensingDueDate)}
-            error={erro("licensingDueDate")}
+            invalid={acusado("licensingDueDate")}
           />
           <Field
             name="chassis"
             label="Chassi"
             defaultValue={value(vehicle?.chassis)}
-            error={erro("chassis")}
+            invalid={acusado("chassis")}
             className="font-mono"
           />
           <Field
             name="renavam"
             label="Renavam"
             defaultValue={value(vehicle?.renavam)}
-            error={erro("renavam")}
+            invalid={acusado("renavam")}
             className="font-mono"
           />
           <Field
             name="fipeValue"
-            label="Valor FIPE"
+            label="FIPE"
             type="number"
             step="0.01"
             defaultValue={value(vehicle?.fipeValue)}
-            error={erro("fipeValue")}
+            invalid={acusado("fipeValue")}
             className="text-right"
           />
           <Field
             name="purchaseValue"
-            label="Valor de compra"
+            label="Compra"
             type="number"
             step="0.01"
             defaultValue={value(vehicle?.purchaseValue)}
-            error={erro("purchaseValue")}
+            invalid={acusado("purchaseValue")}
             className="text-right"
           />
           <Field
             name="purchaseDate"
-            label="Data de compra"
+            label="Comprada em"
             type="date"
             defaultValue={value(vehicle?.purchaseDate)}
-            error={erro("purchaseDate")}
+            invalid={acusado("purchaseDate")}
           />
         </div>
 
@@ -292,7 +339,11 @@ export function VehicleForm({
         </div>
 
         {!vehicle && (
-          <CrlvDropzone name={crlv} onPick={setCrlv} error={erro("crlv")} />
+          <CrlvDropzone
+            name={crlv}
+            onPick={setCrlv}
+            invalid={acusado("crlv")}
+          />
         )}
       </div>
 
@@ -304,6 +355,9 @@ export function VehicleForm({
             : "justify-start",
         )}
       >
+        {/* Ferramenta de desenvolvimento: em produção ela não se desenha. */}
+        <AutofillButton />
+
         {onCancel && (
           <Button type="button" variant="outline" size="lg" onClick={onCancel}>
             Cancelar
@@ -324,6 +378,52 @@ export function VehicleForm({
 }
 
 /**
+ * A cor da moto, escolhida em vez de digitada.
+ *
+ * A coluna é texto livre e continua sendo: o que vai para o banco é o nome da
+ * amostra. Digitar deixava "Preta", "preto" e "PRETA" conviverem na mesma
+ * frota, e o ponto de cor da lista — que é o que o gestor compara — só entende
+ * o que está no mapa.
+ *
+ * A cor já guardada que não estiver entre as oferecidas ganha uma amostra
+ * própria, com o nome como está no banco: escolher de uma lista não pode
+ * apagar o que alguém escreveu antes dela existir.
+ */
+function ColorPicker({ current }: { current: string | null }) {
+  const oferecidas = VEHICLE_COLORS.map(({ name, hex }) => ({ name, hex }));
+  const conhecida = oferecidas.some((cor) => cor.name === current);
+  const cores =
+    current && !conhecida
+      ? [...oferecidas, { name: current, hex: vehicleColor(current) }]
+      : oferecidas;
+
+  return (
+    <div className="col-span-2 flex flex-col gap-1.5 @2xl:col-span-1">
+      <Label>Cor</Label>
+      <RadioGroup
+        name="color"
+        defaultValue={current ?? undefined}
+        className="flex h-8 flex-wrap items-center gap-2"
+      >
+        {cores.map(({ name, hex }) => (
+          <RadioGroupItem
+            key={name}
+            value={name}
+            aria-label={name}
+            title={name}
+            style={{ background: hex }}
+            // A bolinha branca do meio some: numa amostra branca ela não se vê.
+            // Quem diz o que está escolhido é o anel em volta, que funciona
+            // sobre qualquer cor.
+            className="size-6 border-border data-checked:border-border data-checked:ring-2 data-checked:ring-primary data-checked:ring-offset-2 data-checked:ring-offset-card [&_[data-slot=radio-group-indicator]]:hidden"
+          />
+        ))}
+      </RadioGroup>
+    </div>
+  );
+}
+
+/**
  * Onde o CRLV entra, por arrasto ou por clique.
  *
  * O `<input type="file">` cobre a caixa inteira, transparente: arrastar um
@@ -334,11 +434,11 @@ export function VehicleForm({
 function CrlvDropzone({
   name,
   onPick,
-  error,
+  invalid,
 }: {
   name: string | null;
   onPick: (name: string | null) => void;
-  error?: string;
+  invalid?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -346,7 +446,7 @@ function CrlvDropzone({
       <label
         className={cn(
           "relative flex h-[84px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-center text-xs transition-colors",
-          error
+          invalid
             ? "border-destructive text-destructive"
             : "border-input text-muted-foreground hover:border-primary",
         )}
@@ -356,18 +456,13 @@ function CrlvDropzone({
           type="file"
           name="crlv"
           accept="image/*,application/pdf"
-          aria-describedby={error ? "crlv-error" : undefined}
+          aria-describedby={invalid ? FORM_ERROR_ID : undefined}
           onChange={(event) => onPick(event.target.files?.[0]?.name ?? null)}
           className="absolute inset-0 cursor-pointer opacity-0"
         />
         <Upload aria-hidden className="size-4" />
         {name ?? "Arraste o CRLV aqui, ou clique para escolher"}
       </label>
-      {error && (
-        <p id="crlv-error" role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

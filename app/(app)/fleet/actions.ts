@@ -37,7 +37,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 export type FormState = {
   error?: string;
   field?: string;
-  created?: { plate: string };
+  created?: { id: string; plate: string };
 };
 
 /** O recado de um `UserError`, com o campo que ele acusa. */
@@ -71,7 +71,10 @@ function vehicleFromForm(formData: FormData): NewVehicle {
   // Só o painel de cadastro oferece a situação. Ausente, ela não entra no
   // update: a página de detalhe não tem o campo, e escrever `undefined` lá
   // apagaria o que o select da linha gravou.
-  const status = formData.get("status");
+  // Vazio é ausência, não valor errado — como em `optionalField`. Um select
+  // que não veio preenchido deixa a situação com o padrão do banco em vez de
+  // derrubar o cadastro inteiro por um campo que a tela nem sempre oferece.
+  const status = formData.get("status") || null;
   if (status !== null && !VEHICLE_STATUSES.includes(status as VehicleStatus)) {
     throw new UserError("Situação inválida", "status");
   }
@@ -146,7 +149,7 @@ export async function addVehicle(
   _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  let plate: string;
+  let novo: { id: string; plate: string };
 
   try {
     const vehicle = vehicleFromForm(formData);
@@ -156,7 +159,7 @@ export async function addVehicle(
     const client = await createClient();
 
     const created = await createVehicle(client, vehicle);
-    plate = created.plate;
+    novo = { id: created.id, plate: created.plate };
 
     const crlv = formData.get("crlv");
     if (crlv instanceof File && crlv.size > 0) {
@@ -165,7 +168,7 @@ export async function addVehicle(
       } catch (error) {
         revalidatePath("/fleet");
         return {
-          error: `${plate} foi cadastrada, mas o CRLV não subiu: ${fileErrorMessage(error)}`,
+          error: `${novo.plate} foi cadastrada, mas o CRLV não subiu: ${fileErrorMessage(error)}`,
           field: "crlv",
         };
       }
@@ -179,7 +182,7 @@ export async function addVehicle(
   }
 
   revalidatePath("/fleet");
-  return { created: { plate } };
+  return { created: novo };
 }
 
 /**

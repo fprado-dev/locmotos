@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import { VehicleForm } from "./vehicle-form";
  */
 export function NewVehicleSheet() {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -35,16 +37,30 @@ export function NewVehicleSheet() {
         Cadastrar veículo
       </SheetTrigger>
 
-      <SheetContent className="w-[440px] gap-0 sm:max-w-[440px]">
+      <SheetContent className="w-[560px] gap-0 sm:max-w-[560px]">
         <SheetHeader className="h-16 shrink-0 justify-center border-b border-border px-6">
           <SheetTitle>Cadastrar veículo</SheetTitle>
         </SheetHeader>
 
         <VehicleForm
           onCancel={() => setOpen(false)}
-          onSaved={(plate) => {
+          onSaved={({ id, plate }) => {
             setOpen(false);
             toast.success(`${plate} entrou na frota.`);
+
+            /*
+             * A moto nova é a que menos tempo passou parada, então na ordem de
+             * sempre — mais parada primeiro — ela cai no fim da última página,
+             * onde o gestor não a vê e conclui que o cadastro não funcionou.
+             *
+             * A tela volta ordenada pela mais recente e sem filtro nenhum: a
+             * moto que acabou de entrar pode não passar pelo filtro que estava
+             * aplicado, e ela é a única coisa que o gestor quer ver agora.
+             * `new` diz qual linha realçar, e some no clique seguinte.
+             */
+            router.push(
+              `/fleet?sort=daysWithoutRental&direction=asc&new=${id}`,
+            );
           }}
         />
       </SheetContent>

@@ -770,15 +770,25 @@ export async function attachVehicleFile(
 export async function signedFileUrl(
   client: SupabaseClient,
   path: string,
-  seconds = 60,
+  { seconds = 60, download = false }: SignedUrlOptions = {},
 ): Promise<string | null> {
   const { data, error } = await client.storage
     .from(FILES_BUCKET)
-    .createSignedUrl(path, seconds);
+    .createSignedUrl(path, seconds, download ? { download } : undefined);
 
   if (error) throw error;
   return data?.signedUrl ?? null;
 }
+
+/**
+ * `download` pede ao Storage que a resposta venha como anexo, com este nome.
+ *
+ * Sem isso o arquivo abre na aba em vez de baixar: o atributo `download` do
+ * `<a>` é ignorado quando o arquivo vem de outra origem, e o bucket é outra
+ * origem. Quem decide é o cabeçalho que o Storage devolve, e ele é assinado
+ * junto com a URL.
+ */
+export type SignedUrlOptions = { seconds?: number; download?: string | false };
 
 const MS_PER_DAY = 86_400_000;
 

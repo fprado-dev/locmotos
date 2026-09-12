@@ -14,13 +14,29 @@ export const STATUS_LABELS: Record<VehicleStatus, string> = {
 };
 
 /**
+ * As cores que o cadastro oferece, na ordem em que as mostra.
+ *
+ * São as da frota de referência, e o nome é o que vai para o banco: a coluna é
+ * texto livre, e escolher de uma lista é o que mantém "Preta" e "preto" de
+ * virarem duas cores diferentes na lista.
+ */
+export const VEHICLE_COLORS = [
+  { name: "Vinho", hex: "#6b1e2e" },
+  { name: "Preta", hex: "#1c1c1e" },
+  { name: "Vermelha", hex: "#d12b2b" },
+  { name: "Azul", hex: "#2457c5" },
+  { name: "Branca", hex: "#f2f2f2" },
+] as const;
+
+/**
  * A cor da moto virando cor na tela.
  *
- * A coluna é texto livre — quem digita é o gestor —, então o mapa cobre o que
- * a frota costuma ter e o resto vira um neutro. O nome digitado continua
- * aparecendo no `title` do ponto: a cor é reforço, não a informação.
+ * A coluna é texto livre e já tem anos de digitação dentro: o mapa cobre as
+ * duas formas de cada nome, e o que não estiver nele vira um neutro. O nome
+ * guardado continua aparecendo no `title` do ponto — a cor é reforço, não a
+ * informação.
  */
-const VEHICLE_COLORS: Record<string, string> = {
+const HEX_BY_NAME: Record<string, string> = {
   vinho: "#6b1e2e",
   preta: "#1c1c1e",
   preto: "#1c1c1e",
@@ -38,7 +54,7 @@ export function vehicleColor(color: string | null): string {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
-  return (nome && VEHICLE_COLORS[nome]) || "var(--subtle)";
+  return (nome && HEX_BY_NAME[nome]) || "var(--subtle)";
 }
 
 const integer = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });

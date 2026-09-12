@@ -1,17 +1,10 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatInteger, STATUS_LABELS, vehicleColor } from "@/app/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -42,6 +35,7 @@ import {
   type VehicleStatus,
 } from "@/modules/fleet";
 import { FilterSelect } from "./filter-select";
+import { PlateSearch } from "./plate-search";
 import { NewVehicleSheet } from "./new-vehicle-sheet";
 import { RowCheckbox, SelectAll, Selection, Toolbar } from "./selection";
 
@@ -318,7 +312,14 @@ function LicensingBadge({ dueDate }: { dueDate: string | null }) {
 }
 
 /** Uma moto por linha, do jeito que se compara com a de cima e a de baixo. */
-function VehicleRow({ vehicle }: { vehicle: Vehicle }) {
+function VehicleRow({
+  vehicle,
+  entering,
+}: {
+  vehicle: Vehicle;
+  /** Acabou de ser cadastrada: a linha se apresenta e o realce apaga sozinho. */
+  entering?: boolean;
+}) {
   const stopped = daysWithoutRental(vehicle.createdAt);
 
   return (
@@ -327,6 +328,7 @@ function VehicleRow({ vehicle }: { vehicle: Vehicle }) {
         // Quem pinta a linha marcada é o próprio checkbox, via `:has()`: não
         // há estado de React aqui, e a linha continua sendo do servidor.
         "relative border-b-0 hover:bg-hover has-[[data-checked]]:bg-sel",
+        entering && "animate-[vehicle-in_2.5s_ease-out]",
         // Moto fora de operação não compete por atenção com o resto da frota.
         vehicle.status === "unavailable" && "text-muted-foreground",
       )}
@@ -428,6 +430,9 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
     sort: sort(params.sort),
     direction: direction(params.direction),
   };
+  // Não é filtro: é o rastro de quem acabou de cadastrar, e só serve para
+  // dizer qual linha se apresenta. Some no clique seguinte, junto com a URL.
+  const entering = text(params.new);
   const page = filters.page ?? 1;
   // Com filtro na mão, uma lista vazia significa "não achei", não "não tem".
   const filtering = Object.entries(filters).some(
@@ -515,31 +520,14 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
             <Toolbar>
               <div className="flex h-full w-full flex-col justify-center gap-3 px-4">
                 {/*
-                A busca continua sendo formulário GET puro: o filtro vira URL, e
-                a URL é o estado. Dá para recarregar, compartilhar e voltar no
-                histórico — e digitar uma placa e apertar Enter funciona sem
-                JavaScript nenhum. Os selects e os chips, que agem no clique,
-                reescrevem a mesma URL.
-              */}
-                <form className="flex items-center gap-2">
-                  {/* O que não está neste formulário mas está na URL volta por
-                    aqui: buscar uma placa não desfaz a ordem nem os selects. */}
-                  {Object.entries(query)
-                    .filter(([key]) => key !== "plate")
-                    .map(([key, value]) => (
-                      <input key={key} type="hidden" name={key} value={value} />
-                    ))}
-
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-subtle" />
-                    <Input
-                      name="plate"
-                      defaultValue={filters.plate}
-                      placeholder="Buscar placa"
-                      aria-label="Buscar placa"
-                      className="w-[220px] pl-8 font-mono uppercase"
-                    />
-                  </div>
+                  Filtro é URL, e a URL é o estado: dá para recarregar,
+                  compartilhar e voltar no histórico. Quem a reescreve é cada
+                  controle no momento em que é usado — a busca quando a
+                  digitação para, os selects e os chips no clique. Não há botão
+                  "Filtrar" porque não sobrou nada para ele dizer.
+                */}
+                <div className="flex items-center gap-2">
+                  <PlateSearch value={filters.plate} query={query} />
 
                   <FilterSelect
                     name="brand"
@@ -595,7 +583,7 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
                       Limpar filtros
                     </Link>
                   )}
-                </form>
+                </div>
 
                 <div className="flex items-center gap-1.5">
                   <StatusChip
@@ -688,7 +676,11 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
 
                 <TableBody>
                   {vehicles.map((vehicle) => (
-                    <VehicleRow key={vehicle.id} vehicle={vehicle} />
+                    <VehicleRow
+                      key={vehicle.id}
+                      vehicle={vehicle}
+                      entering={vehicle.id === entering}
+                    />
                   ))}
                 </TableBody>
               </Table>

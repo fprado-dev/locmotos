@@ -7,6 +7,10 @@ import { fakeValue } from "./autofill";
  * Botão que preenche o formulário da tela, para não digitar catorze campos a
  * cada teste.
  *
+ * Ele mora no rodapé do próprio formulário, e não flutuando num canto: fixo na
+ * tela ele cobria ora o "Sair" da sidebar, ora o toast do cadastro que acabou
+ * de ser salvo — e quem precisa dele já está olhando para o formulário.
+ *
  * Só formulário com `data-autofill` é preenchido. Sem essa marca o botão
  * escreveria na barra de filtros e no formulário de sair junto — um atributo
  * por formulário é mais barato que uma heurística que erra.
@@ -35,8 +39,28 @@ export function AutofillButton() {
         field instanceof HTMLTextAreaElement;
       if (!fillable || !field.name || field.disabled) continue;
       // `hidden` carrega escolha da própria tela (a categoria do veículo, por
-      // exemplo); sobrescrever seria preencher errado.
-      if (field.type === "hidden" || field.type === "submit") continue;
+      // exemplo); sobrescrever seria preencher errado. E campo de arquivo o
+      // navegador não deixa preencher de jeito nenhum — escrever nele lança, e
+      // a exceção derrubava o preenchimento dos campos seguintes junto.
+      if (
+        field.type === "hidden" ||
+        field.type === "submit" ||
+        field.type === "file"
+      ) {
+        continue;
+      }
+
+      // Campo que a pessoa não alcança, o botão também não preenche.
+      //
+      // O Select do Base UI submete por um `<input>` de texto comum, escondido
+      // só por CSS, com `aria-hidden` e `tabIndex -1`. Sem esta guarda o botão
+      // escrevia um nome falso onde devia haver uma situação, e o cadastro
+      // morria em "Situação inválida" — e só quando o botão era usado, que é o
+      // que fazia o erro parecer vir de outro lugar. A regra vale para todo
+      // componente da biblioteca que submete assim, não só para este.
+      if (field.getAttribute("aria-hidden") === "true" || field.tabIndex < 0) {
+        continue;
+      }
 
       if (field instanceof HTMLSelectElement) {
         const option = [...field.options].find((each) => each.value);
@@ -51,11 +75,12 @@ export function AutofillButton() {
   return (
     <Button
       type="button"
-      size="lg"
+      size="sm"
       onClick={fill}
       aria-label="Preencher o formulário com dados de teste"
       title="Preencher o formulário com dados de teste"
-      className="fixed right-4 bottom-4 z-50 rounded-full bg-soon-fg text-background shadow-lg"
+      variant="ghost"
+      className="mr-auto text-soon-fg hover:text-soon-fg"
     >
       Preencher
     </Button>
