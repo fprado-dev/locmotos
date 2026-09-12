@@ -167,13 +167,13 @@
 }
 
 /*
- * A linha da moto que acabou de ser cadastrada.
+ * A linha que acabou de ser cadastrada — moto ou locatário.
  *
  * O painel fecha e a tela volta com mais uma linha entre vinte: sem isto o
  * gestor não tem como saber qual delas é a dele. O realce apaga sozinho, que é
  * o oposto de um estado — ele não sobrevive ao próximo clique.
  */
-@keyframes vehicle-in {
+@keyframes row-in {
   from {
     background-color: var(--sel);
     box-shadow: inset 2px 0 0 var(--primary);

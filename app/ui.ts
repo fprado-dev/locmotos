@@ -63,3 +63,66 @@ const integer = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 export function formatInteger(value: number): string {
   return integer.format(value);
 }
+
+/** As iniciais de um nome, para o avatar que substitui a foto que não há. */
+export function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((palavra) => palavra[0] ?? "")
+    .join("")
+    .toUpperCase();
+}
+
+const monthYear = new Intl.DateTimeFormat("pt-BR", {
+  month: "short",
+  year: "numeric",
+});
+
+const fullDate = new Intl.DateTimeFormat("pt-BR", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/**
+ * "mar 2025", de um instante do banco.
+ *
+ * O pt-BR escreve "mar. de 2025"; a coluna tem 110px e o "de" não informa
+ * nada que o mês e o ano lado a lado já não digam.
+ */
+export function formatMonthYear(moment: string): string {
+  return monthYear.format(new Date(moment)).replace(/\.?\s+de\s+/, " ");
+}
+
+/** "10 de março de 2025", de um instante do banco. */
+export function formatFullDate(moment: string): string {
+  return fullDate.format(new Date(moment));
+}
+
+/**
+ * "15/07/2026", de uma data do Postgres — que chega como "YYYY-MM-DD".
+ *
+ * Montada dos pedaços e não por `new Date()`: a data é dia de calendário, e
+ * `new Date("2026-07-15")` é meia-noite UTC, que no Brasil é 14/07 às 21h.
+ * Uma validade de CNH não pode aparecer um dia antes por causa de fuso.
+ */
+export function formatDay(date: string): string {
+  const [ano, mês, dia] = date.split("-");
+  return `${dia}/${mês}/${ano}`;
+}
+
+/**
+ * Como o responsável por uma restrição aparece na tela e fica registrado.
+ *
+ * Uma frase só, num lugar só: o modal mostra o que vai ser gravado, e quem
+ * grava é a Server Action. Duas montagens da mesma frase acabariam divergindo,
+ * e aí o campo readonly prometeria um nome e o banco guardaria outro.
+ *
+ * Não há cadastro de pessoas dentro da locadora ainda — quem opera é o gestor,
+ * e o que distingue um registro do outro é a locadora.
+ */
+export function managerLabel(tenantName: string | null | undefined): string {
+  return `Gestor · ${tenantName ?? "locadora"}`;
+}

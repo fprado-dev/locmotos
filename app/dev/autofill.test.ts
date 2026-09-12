@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_AMOUNT, optionalNumber, requiredField } from "@/lib/form";
+import { isCpf } from "@/modules/renters";
 import { fakeValue, KNOWN_FIELDS } from "./autofill";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -44,6 +45,23 @@ describe("preenchimento de formulário em desenvolvimento", () => {
     for (const date of ["licensingDueDate", "purchaseDate"]) {
       expect(requiredField(form, date, date)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
+  });
+
+  it("gera um CPF que o cadastro de locatário aceita", () => {
+    // Onze dígitos quaisquer seriam recusados antes de chegar ao banco, e o
+    // botão existe para o formulário passar no primeiro envio.
+    for (let i = 0; i < 50; i += 1) {
+      expect(isCpf(fakeValue("cpf", "text"))).toBe(true);
+    }
+  });
+
+  it("gera um CPF diferente a cada clique", () => {
+    // CPF é único dentro da locadora, como a placa.
+    const cpfs = new Set(
+      Array.from({ length: 20 }, () => fakeValue("cpf", "text")),
+    );
+
+    expect(cpfs.size).toBeGreaterThan(18);
   });
 
   it("gera uma placa diferente a cada clique", () => {
