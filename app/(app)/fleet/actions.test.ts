@@ -56,10 +56,17 @@ function form(fields: Record<string, string>) {
 }
 
 describe("cadastrar veículo pela tela", () => {
-  it("cadastra e não devolve erro", async () => {
+  it("cadastra e avisa qual placa entrou", async () => {
     await signedInManager();
 
-    expect(await addVehicle({}, form({ plate: "ABC1D23" }))).toEqual({});
+    // A placa volta porque o painel fecha no sucesso: o toast que anuncia o
+    // cadastro é escrito depois que o formulário já saiu da tela. O id volta
+    // porque é ele que leva a lista até a linha nova, para realçá-la.
+    const state = await addVehicle({}, form({ plate: "ABC1D23" }));
+
+    expect(state.error).toBeUndefined();
+    expect(state.created).toMatchObject({ plate: "ABC1D23" });
+    expect(state.created?.id).toEqual(expect.any(String));
   });
 
   it("explica que a placa já existe, em vez de vazar o erro do Postgres", async () => {
@@ -72,6 +79,9 @@ describe("cadastrar veículo pela tela", () => {
     expect(state.error).toBe(
       "Já existe um veículo com a placa ABC1D23 nesta locadora.",
     );
+    // O painel tem treze campos: sem dizer qual deles, o recado manda o gestor
+    // procurar.
+    expect(state.field).toBe("plate");
   });
 
   it("cobra a placa quando ela vem em branco", async () => {
@@ -79,7 +89,10 @@ describe("cadastrar veículo pela tela", () => {
 
     const state = await addVehicle({}, form({ plate: "   " }));
 
-    expect(state.error).toBe("Campo obrigatório: Placa");
+    expect(state).toMatchObject({
+      error: "Campo obrigatório: Placa",
+      field: "plate",
+    });
   });
 
   it("recusa quilometragem quebrada antes de o banco arredondar", async () => {

@@ -13,7 +13,7 @@ export function requiredField(
   const value = formData.get(field);
 
   if (typeof value !== "string" || value.trim() === "") {
-    throw new UserError(`Campo obrigatório: ${label}`);
+    throw new UserError(`Campo obrigatório: ${label}`, field);
   }
 
   return value.trim();
@@ -52,7 +52,7 @@ export function optionalNumber(
     parsed <= max &&
     (!integer || Number.isInteger(parsed));
 
-  if (!valid) throw new UserError(`${label}: valor inválido`);
+  if (!valid) throw new UserError(`${label}: valor inválido`, field);
 
   return parsed;
 }

@@ -1,10 +1,8 @@
-import { LogOut } from "lucide-react";
 import { signOut } from "@/app/(auth)/actions";
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { currentTenant } from "@/modules/tenants";
 import { Nav } from "./nav";
-import { ThemeToggle } from "./theme-toggle";
+import { ProfileMenu } from "./profile-menu";
 
 /** As iniciais da locadora, para o bloco do rodapé da sidebar. */
 function iniciais(nome: string): string {
@@ -39,33 +37,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
         <Nav />
 
-        <div className="mt-auto flex flex-col gap-2 p-3">
-          <div className="flex items-center gap-2.5 rounded-lg border border-border bg-surface-2 p-2.5">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-chip text-[11px] font-semibold text-muted-foreground">
-              {tenant ? iniciais(tenant.name) : "--"}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-[13px] font-medium">
-                {tenant?.name ?? "Sem locadora"}
-              </span>
-              <span className="block text-[11px] text-muted-foreground">
-                Locadora
-              </span>
-            </span>
-          </div>
-
-          <ThemeToggle />
-
-          <form action={signOut}>
-            <Button
-              type="submit"
-              variant="ghost"
-              className="h-[34px] w-full justify-start gap-2.5 px-3 font-normal text-muted-foreground hover:text-foreground"
-            >
-              <LogOut className="size-[13px]" strokeWidth={1.5} />
-              Sair
-            </Button>
-          </form>
+        <div className="mt-auto p-3">
+          <ProfileMenu
+            name={tenant?.name ?? "Sem locadora"}
+            initials={tenant ? iniciais(tenant.name) : "--"}
+            signOut={signOut}
+          />
         </div>
       </aside>
 

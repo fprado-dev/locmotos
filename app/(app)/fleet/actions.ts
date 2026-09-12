@@ -26,7 +26,26 @@ import {
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-export type FormState = { error?: string };
+/**
+ * O que uma ação de formulário tem a contar.
+ *
+ * `field` é o campo que o erro acusa, quando há um: é o que deixa a mensagem
+ * encostar no campo em vez de ficar solta no topo do painel. `created` diz que
+ * um cadastro novo entrou — sem ele o painel não teria como distinguir
+ * "acabou de salvar" de "ainda não tentou", que são o mesmo `{}`.
+ */
+export type FormState = {
+  error?: string;
+  field?: string;
+  created?: { id: string; plate: string };
+};
+
+/** O recado de um `UserError`, com o campo que ele acusa. */
+function userError(error: unknown): FormState | null {
+  return error instanceof UserError
+    ? { error: error.message, field: error.field }
+    : null;
+}
 
 /**
  * Devolve o erro em vez de lançar.
@@ -46,7 +65,18 @@ function vehicleFromForm(formData: FormData): NewVehicle {
   // `year` é smallint no banco: sem faixa aqui, 99999 vira erro de overflow.
   const year = Number(requiredField(formData, "year", "Ano"));
   if (!Number.isInteger(year) || year < 1900 || year > CURRENT_YEAR + 1) {
-    throw new UserError("Ano inválido");
+    throw new UserError("Ano inválido", "year");
+  }
+
+  // Só o painel de cadastro oferece a situação. Ausente, ela não entra no
+  // update: a página de detalhe não tem o campo, e escrever `undefined` lá
+  // apagaria o que o select da linha gravou.
+  // Vazio é ausência, não valor errado — como em `optionalField`. Um select
+  // que não veio preenchido deixa a situação com o padrão do banco em vez de
+  // derrubar o cadastro inteiro por um campo que a tela nem sempre oferece.
+  const status = formData.get("status") || null;
+  if (status !== null && !VEHICLE_STATUSES.includes(status as VehicleStatus)) {
+    throw new UserError("Situação inválida", "status");
   }
 
   return {
@@ -54,6 +84,7 @@ function vehicleFromForm(formData: FormData): NewVehicle {
     brand: requiredField(formData, "brand", "Marca"),
     model: requiredField(formData, "model", "Modelo"),
     year,
+    status: (status as VehicleStatus | null) ?? undefined,
     category: requiredField(formData, "category", "Categoria"),
     chassis: optionalField(formData, "chassis"),
     renavam: optionalField(formData, "renavam"),
@@ -83,10 +114,43 @@ function vehicleFromForm(formData: FormData): NewVehicle {
   };
 }
 
+/**
+ * O recado do bucket, em português.
+ *
+ * O Storage recusa tipo fora da lista e arquivo acima de 10 MB, e responde em
+ * inglês falando de mime type. O gestor precisa de frase, e das duas telas que
+ * sobem arquivo — o painel de cadastro e a página do veículo — sai a mesma.
+ */
+function fileErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+
+  if (/mime type|not supported/i.test(message)) {
+    return "Formato não aceito. Envie imagem (JPG, PNG, WEBP) ou PDF.";
+  }
+  if (/maximum allowed size|too large|entity too large/i.test(message)) {
+    return "Arquivo grande demais. O limite é 10 MB.";
+  }
+
+  return "Não foi possível anexar o arquivo. Tente de novo.";
+}
+
+/**
+ * Cadastra o veículo e, se veio um CRLV junto, anexa na mesma ida.
+ *
+ * O painel pede o documento no mesmo formulário do cadastro, e o anexo precisa
+ * do id que só existe depois do insert. Fazer os dois aqui evita devolver o id
+ * ao browser só para ele pedir a segunda coisa — e evita a moto ficar
+ * cadastrada sem o documento porque a segunda chamada não saiu.
+ *
+ * O anexo falhando não desfaz o cadastro: a moto já está na frota, e o gestor
+ * reenvia o documento pela página dela. O recado diz exatamente isso.
+ */
 export async function addVehicle(
   _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  let novo: { id: string; plate: string };
+
   try {
     const vehicle = vehicleFromForm(formData);
 
@@ -94,16 +158,31 @@ export async function addVehicle(
     // ela: é o que deixa o teste rodar a mesma função como outra locadora.
     const client = await createClient();
 
-    await createVehicle(client, vehicle);
+    const created = await createVehicle(client, vehicle);
+    novo = { id: created.id, plate: created.plate };
+
+    const crlv = formData.get("crlv");
+    if (crlv instanceof File && crlv.size > 0) {
+      try {
+        await attachVehicleFile(client, created.id, "crlv", crlv);
+      } catch (error) {
+        revalidatePath("/fleet");
+        return {
+          error: `${novo.plate} foi cadastrada, mas o CRLV não subiu: ${fileErrorMessage(error)}`,
+          field: "crlv",
+        };
+      }
+    }
   } catch (error) {
-    if (error instanceof UserError) return { error: error.message };
+    const recado = userError(error);
+    if (recado) return recado;
 
     console.error("Falha ao cadastrar veículo", error);
     return { error: "Não foi possível cadastrar o veículo. Tente de novo." };
   }
 
   revalidatePath("/fleet");
-  return {};
+  return { created: novo };
 }
 
 /**
@@ -128,7 +207,8 @@ export async function changeVehicleStatus(
 
     if (!vehicle) throw new UserError("Veículo não encontrado.");
   } catch (error) {
-    if (error instanceof UserError) return { error: error.message };
+    const recado = userError(error);
+    if (recado) return recado;
 
     console.error("Falha ao alterar a situação do veículo", error);
     return { error: "Não foi possível alterar a situação. Tente de novo." };
@@ -183,7 +263,8 @@ export async function changeVehiclesStatus(
 
     if (changed === 0) throw new UserError("Nenhum veículo foi alterado.");
   } catch (error) {
-    if (error instanceof UserError) return { error: error.message };
+    const recado = userError(error);
+    if (recado) return recado;
 
     console.error("Falha ao alterar a situação em lote", error);
     return { error: "Não foi possível alterar a situação. Tente de novo." };
@@ -203,7 +284,8 @@ export async function discardVehicles(ids: string[]): Promise<BatchState> {
 
     if (changed === 0) throw new UserError("Nenhum veículo foi removido.");
   } catch (error) {
-    if (error instanceof UserError) return { error: error.message };
+    const recado = userError(error);
+    if (recado) return recado;
 
     console.error("Falha ao remover veículos em lote", error);
     return { error: "Não foi possível remover os veículos. Tente de novo." };
@@ -236,7 +318,8 @@ export async function editVehicle(
 
     if (!updated) throw new UserError("Veículo não encontrado.");
   } catch (error) {
-    if (error instanceof UserError) return { error: error.message };
+    const recado = userError(error);
+    if (recado) return recado;
 
     console.error("Falha ao editar veículo", error);
     return { error: "Não foi possível salvar as alterações. Tente de novo." };
@@ -260,7 +343,8 @@ export async function discardVehicle(
 
     if (!removed) throw new UserError("Veículo não encontrado.");
   } catch (error) {
-    if (error instanceof UserError) return { error: error.message };
+    const recado = userError(error);
+    if (recado) return recado;
 
     console.error("Falha ao remover veículo", error);
     return { error: "Não foi possível remover o veículo. Tente de novo." };
@@ -304,22 +388,11 @@ export async function attachVehicleFiles(
       if (!attached) throw new UserError("Veículo não encontrado.");
     }
   } catch (error) {
-    if (error instanceof UserError) return { error: error.message };
-
-    // O bucket recusa tipo fora da lista e arquivo acima de 10 MB. O recado do
-    // Storage é em inglês e fala de mime type; o gestor precisa de frase.
-    const message = error instanceof Error ? error.message : "";
-    if (/mime type|not supported/i.test(message)) {
-      return {
-        error: "Formato não aceito. Envie imagem (JPG, PNG, WEBP) ou PDF.",
-      };
-    }
-    if (/maximum allowed size|too large|entity too large/i.test(message)) {
-      return { error: "Arquivo grande demais. O limite é 10 MB." };
-    }
+    const recado = userError(error);
+    if (recado) return recado;
 
     console.error("Falha ao anexar arquivo", error);
-    return { error: "Não foi possível anexar o arquivo. Tente de novo." };
+    return { error: fileErrorMessage(error) };
   }
 
   revalidatePath("/fleet");

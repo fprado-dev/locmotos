@@ -27,6 +27,7 @@ export {
   type FleetSummary,
   type LicensingAlert,
   type NewVehicle,
+  type SignedUrlOptions,
   type SortDirection,
   type Vehicle,
   type VehicleFileKind,

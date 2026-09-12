@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
-import { AutofillButton } from "./dev/autofill-button";
 import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
 
@@ -35,8 +34,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {children}
           <Toaster />
         </ThemeProvider>
-        {/* Ferramenta de desenvolvimento: em produção ela não se desenha. */}
-        <AutofillButton />
       </body>
     </html>
   );
