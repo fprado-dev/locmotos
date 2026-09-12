@@ -23,6 +23,11 @@ Pessoa que aluga a moto e a pilota. No locmotos, quem aluga e quem conduz são a
 _Código_: `Renter`
 _Evitar_: cliente, condutor, motorista, usuário, motoboy
 
+**CNH**:
+Habilitação do locatário: a categoria e a data de validade. A locadora entrega moto, então a categoria tem que incluir o A. Vencida ou vencendo é derivado na leitura, nunca guardado — como **Dias sem locação**.
+_Código_: `cnhCategory`, `cnhDueDate`
+_Evitar_: carteira, habilitação, licença
+
 **Operador do SaaS**:
 Quem administra o produto e enxerga todas as locadoras. É o papel do fornecedor do sistema, não da locadora.
 _Código_: `Operator`
@@ -104,6 +109,11 @@ _Evitar_: moto, bem, ativo
 **Frota**:
 Conjunto de veículos de uma locadora.
 _Código_: `Fleet`
+
+**Baixa**:
+Tirar um veículo da frota ou um locatário da carteira sem apagar a linha. O cadastro some da lista e as locações e cobranças ligadas a ele continuam de pé — apagar levaria o histórico junto.
+_Código_: `deletedAt`, `removeVehicle`, `removeRenter`
+_Evitar_: exclusão, delete, arquivar, inativar
 
 **Situação**:
 Em que estado de operação um veículo está: disponível, reservada, em manutenção ou indisponível. Na v1 quem define é o gestor, na mão.

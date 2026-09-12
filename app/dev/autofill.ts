@@ -45,6 +45,32 @@ function plate(): string {
   return `${letters(3)}${digits(1)}${letters(1)}${digits(2)}`;
 }
 
+/**
+ * CPF sorteado com os dois verificadores certos.
+ *
+ * Onze dígitos quaisquer seriam recusados pelo cadastro antes de chegar ao
+ * banco — o botão existe justamente para o formulário passar no primeiro
+ * envio. E sorteado, e não fixo, porque o CPF é único dentro da locadora.
+ */
+function cpf(): string {
+  let número = digits(9);
+  // Onze dígitos iguais passam na conta e não são CPF: o gerador tem que
+  // devolver um valor que a própria validação aceite.
+  if (/^(\d)\1{8}$/.test(número)) número = `1${número.slice(1)}`;
+
+  for (const tamanho of [9, 10]) {
+    let soma = 0;
+    for (let i = 0; i < tamanho; i += 1) {
+      soma += Number(número[i]) * (tamanho + 1 - i);
+    }
+
+    const resto = (soma * 10) % 11;
+    número += String(resto === 10 ? 0 : resto);
+  }
+
+  return número;
+}
+
 /** Campos que o gerador conhece pelo nome. O resto cai no tipo do input. */
 const BY_NAME: Record<string, () => string> = {
   plate,
@@ -62,6 +88,13 @@ const BY_NAME: Record<string, () => string> = {
   fipeValue: () => String(between(8_000, 25_000)),
   purchaseValue: () => String(between(7_000, 22_000)),
   notes: () => pick(["Baú instalado.", "Revisão feita.", "Pneu novo atrás."]),
+  name: () =>
+    `${pick(["Ana", "Bruno", "Carla", "Diego", "Elisa", "Fábio"])} ${pick(["Ribeiro", "Salles", "Nunes", "Moraes", "Tavares"])}`,
+  cpf,
+  whatsapp: () => `119${digits(8)}`,
+  // Uma parte vencida, uma vencendo e uma longe: é o que faz os avisos da
+  // lista aparecerem sem ninguém escolher data na mão.
+  cnhDueDate: () => daysFromToday(between(-200, 400)),
 };
 
 /** Os nomes de campo que ganham valor de domínio, e não do tipo do input. */

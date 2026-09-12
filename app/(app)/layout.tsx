@@ -1,18 +1,9 @@
 import { signOut } from "@/app/(auth)/actions";
+import { initials } from "@/app/ui";
 import { createClient } from "@/lib/supabase/server";
 import { currentTenant } from "@/modules/tenants";
 import { Nav } from "./nav";
 import { ProfileMenu } from "./profile-menu";
-
-/** As iniciais da locadora, para o bloco do rodapé da sidebar. */
-function iniciais(nome: string): string {
-  return nome
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((palavra) => palavra[0] ?? "")
-    .join("")
-    .toUpperCase();
-}
 
 /**
  * A casca das telas de quem está logado.
@@ -40,7 +31,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         <div className="mt-auto p-3">
           <ProfileMenu
             name={tenant?.name ?? "Sem locadora"}
-            initials={tenant ? iniciais(tenant.name) : "--"}
+            initials={tenant ? initials(tenant.name) : "--"}
             signOut={signOut}
           />
         </div>

@@ -1,9 +1,8 @@
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { formatInteger, STATUS_LABELS, vehicleColor } from "@/app/ui";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -34,10 +33,12 @@ import {
   type VehicleSort,
   type VehicleStatus,
 } from "@/modules/fleet";
+import { LiveSearch } from "../live-search";
+import { Pagination, SortHeader } from "../sort-header";
+import { RowCheckbox, SelectAll, Selection, Toolbar } from "../selection";
+import { BatchBar } from "./batch-bar";
 import { FilterSelect } from "./filter-select";
-import { PlateSearch } from "./plate-search";
 import { NewVehicleSheet } from "./new-vehicle-sheet";
-import { RowCheckbox, SelectAll, Selection, Toolbar } from "./selection";
 
 type Param = string | string[] | undefined;
 
@@ -116,107 +117,6 @@ function SummaryCard({
         {note}
       </span>
     </Card>
-  );
-}
-
-/**
- * O cabeçalho de uma coluna, que também é o botão de ordenar por ela.
- *
- * A ordem vive na URL como os filtros: cada cabeçalho é um link, e a tela
- * ordenada pode ser recarregada, compartilhada e desfeita pelo botão voltar.
- */
-function SortHeader({
-  column,
-  label,
-  filters,
-  className,
-  align = "left",
-}: {
-  column: VehicleSort;
-  label: string;
-  filters: VehicleFilters;
-  className?: string;
-  align?: "left" | "right";
-}) {
-  const active = (filters.sort ?? DEFAULT_VEHICLE_SORT.sort) === column;
-  const current = filters.direction ?? DEFAULT_VEHICLE_SORT.direction;
-  // Coluna nova começa na ordem decrescente — o maior, o mais caro, o mais
-  // parado. Clicar de novo na mesma coluna inverte.
-  const next = active && current === "desc" ? "asc" : "desc";
-
-  const Arrow = current === "asc" ? ArrowUp : ArrowDown;
-  const arrow = (
-    <span className="inline-flex w-2.5 shrink-0">
-      {active && <Arrow className="size-2.5" />}
-    </span>
-  );
-
-  return (
-    <TableHead
-      aria-sort={
-        active ? (current === "asc" ? "ascending" : "descending") : "none"
-      }
-      className={cn(
-        "sticky top-0 z-10 h-10 border-b border-border bg-surface-2 p-0",
-        className,
-      )}
-    >
-      {/* Base UI não deixa um Button virar link, e ordenar é navegar: a
-          ordem vive na URL, então o cabeçalho é um `<a>` de verdade, com as
-          classes do botão por cima. */}
-      <Link
-        href={href(filters, {
-          sort: column,
-          direction: next,
-          page: undefined,
-        })}
-        className={cn(
-          buttonVariants({ variant: "ghost" }),
-          "h-10 w-full gap-1 rounded-none px-3 text-xs font-medium hover:bg-transparent hover:text-foreground",
-          align === "right" ? "justify-end" : "justify-start",
-          active ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {align === "right" && arrow}
-        {label}
-        {align === "left" && arrow}
-      </Link>
-    </TableHead>
-  );
-}
-
-/**
- * Um passo de página, para frente ou para trás.
- *
- * Com página para onde ir é link de verdade, e não um Button fingindo de link:
- * o gestor abre a página seguinte em outra aba se quiser. Sem para onde ir
- * volta a ser botão, porque só um botão pode estar desabilitado.
- */
-function PageStep({
-  href: to,
-  label,
-  children,
-}: {
-  href: string | undefined;
-  label: string;
-  children: React.ReactNode;
-}) {
-  if (!to) {
-    return (
-      <Button variant="outline" size="icon-sm" aria-label={label} disabled>
-        {children}
-      </Button>
-    );
-  }
-
-  return (
-    <Link
-      href={to}
-      aria-label={label}
-      className={buttonVariants({ variant: "outline", size: "icon-sm" })}
-    >
-      {children}
-    </Link>
   );
 }
 
@@ -328,7 +228,7 @@ function VehicleRow({
         // Quem pinta a linha marcada é o próprio checkbox, via `:has()`: não
         // há estado de React aqui, e a linha continua sendo do servidor.
         "relative border-b-0 hover:bg-hover has-[[data-checked]]:bg-sel",
-        entering && "animate-[vehicle-in_2.5s_ease-out]",
+        entering && "animate-[row-in_2.5s_ease-out]",
         // Moto fora de operação não compete por atenção com o resto da frota.
         vehicle.status === "unavailable" && "text-muted-foreground",
       )}
@@ -338,7 +238,7 @@ function VehicleRow({
         `::after`: sem subir a célula, marcar a moto abriria o cadastro dela.
       */}
       <TableCell className={cn(CELL, "relative z-10 pl-[18px]")}>
-        <RowCheckbox id={vehicle.id} plate={vehicle.plate} />
+        <RowCheckbox id={vehicle.id} label={`Selecionar ${vehicle.plate}`} />
       </TableCell>
 
       <TableCell
@@ -455,6 +355,12 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
       .map(([key, value]) => [key, String(value)]),
   );
 
+  // A ordem resolvida uma vez: os oito cabeçalhos dizem a mesma coisa.
+  const ordem = filters.sort ?? DEFAULT_VEHICLE_SORT.sort;
+  const sentido = filters.direction ?? DEFAULT_VEHICLE_SORT.direction;
+  const sortHref = (sort: string, direction: SortDirection) =>
+    href(filters, { sort: sort as VehicleSort, direction, page: undefined });
+
   const first = (page - 1) * VEHICLES_PER_PAGE + 1;
   const pages = Math.max(1, Math.ceil(total / VEHICLES_PER_PAGE));
 
@@ -517,7 +423,7 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
             quando uma linha é marcada, e o cabeçalho que marca as visíveis. */}
         <Selection visible={vehicles.map((vehicle) => vehicle.id)}>
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-card">
-            <Toolbar>
+            <Toolbar batch={<BatchBar />}>
               <div className="flex h-full w-full flex-col justify-center gap-3 px-4">
                 {/*
                   Filtro é URL, e a URL é o estado: dá para recarregar,
@@ -527,7 +433,14 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
                   "Filtrar" porque não sobrou nada para ele dizer.
                 */}
                 <div className="flex items-center gap-2">
-                  <PlateSearch value={filters.plate} query={query} />
+                  <LiveSearch
+                    path="/fleet"
+                    name="plate"
+                    label="Buscar placa"
+                    value={filters.plate}
+                    query={query}
+                    className="font-mono uppercase"
+                  />
 
                   <FilterSelect
                     name="brand"
@@ -618,57 +531,73 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="sticky top-0 z-10 h-10 w-12 border-b border-border bg-surface-2 pl-[18px]">
-                      <SelectAll />
+                      <SelectAll label="Selecionar as motos desta página" />
                     </TableHead>
                     <SortHeader
                       column="plate"
                       label="Placa"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                       className="w-[118px]"
                     />
                     <SortHeader
                       column="vehicle"
                       label="Veículo"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                     />
                     <SortHeader
                       column="year"
                       label="Ano"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                       align="right"
                       className="w-[72px]"
                     />
                     <SortHeader
                       column="mileage"
                       label="Km"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                       align="right"
                       className="w-[104px]"
                     />
                     <SortHeader
                       column="weeklyPrice"
                       label="R$/semana"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                       align="right"
                       className="w-[116px]"
                     />
                     <SortHeader
                       column="status"
                       label="Situação"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                       className="w-[164px]"
                     />
                     <SortHeader
                       column="daysWithoutRental"
                       label="Parada há"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                       align="right"
                       className="w-[112px]"
                     />
                     <SortHeader
                       column="licensing"
                       label="Licenciamento"
-                      filters={filters}
+                      sort={ordem}
+                      direction={sentido}
+                      href={sortHref}
                       className="w-[190px]"
                     />
                   </TableRow>
@@ -686,33 +615,16 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
               </Table>
             )}
 
-            <footer className="flex h-12 shrink-0 items-center justify-between border-t border-border bg-surface-2 px-[18px] text-[12.5px] text-muted-foreground">
-              <span>
-                {total === 0
-                  ? "Nenhum veículo"
-                  : `${first}–${first + vehicles.length - 1} de ${formatInteger(total)}`}
-              </span>
-
-              <span className="flex items-center gap-1.5">
-                <PageStep
-                  href={
-                    page === 1 ? undefined : href(filters, { page: page - 1 })
-                  }
-                  label="Página anterior"
-                >
-                  <ChevronLeft />
-                </PageStep>
-                <span>
-                  Página {page} de {pages}
-                </span>
-                <PageStep
-                  href={hasMore ? href(filters, { page: page + 1 }) : undefined}
-                  label="Próxima página"
-                >
-                  <ChevronRight />
-                </PageStep>
-              </span>
-            </footer>
+            <Pagination
+              page={page}
+              pages={pages}
+              hasMore={hasMore}
+              href={(page) => href(filters, { page })}
+            >
+              {total === 0
+                ? "Nenhum veículo"
+                : `${first}–${first + vehicles.length - 1} de ${formatInteger(total)}`}
+            </Pagination>
           </section>
         </Selection>
       </div>

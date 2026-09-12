@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { daysSince, daysUntil } from "@/lib/calendar";
 import { UserError } from "@/lib/user-error";
 
 /**
@@ -790,28 +791,8 @@ export async function signedFileUrl(
  */
 export type SignedUrlOptions = { seconds?: number; download?: string | false };
 
-const MS_PER_DAY = 86_400_000;
-
 /** Quantos dias antes do vencimento o licenciamento começa a incomodar. */
 export const LICENSING_WARNING_DAYS = 60;
-
-// Dia do calendário como número, para subtrair sem fuso horário no meio: no
-// Brasil, meia-noite UTC é ontem às 21h, e comparar instantes faria "vence
-// hoje" virar "vencido".
-function calendarDay(moment: Date): number {
-  return Math.floor(
-    Date.UTC(moment.getFullYear(), moment.getMonth(), moment.getDate()) /
-      MS_PER_DAY,
-  );
-}
-
-// `date` do Postgres chega como "YYYY-MM-DD": é dia de calendário, não
-// instante, e passar isso por `new Date()` reintroduz o fuso que a linha acima
-// tirou.
-function calendarDayOf(date: string): number {
-  const [year, month, day] = date.split("-").map(Number);
-  return Math.floor(Date.UTC(year, month - 1, day) / MS_PER_DAY);
-}
 
 /**
  * Há quantos dias o veículo está sem locação.
@@ -825,7 +806,7 @@ function calendarDayOf(date: string): number {
  * muda.
  */
 export function daysWithoutRental(since: string, today = new Date()): number {
-  return calendarDay(today) - calendarDay(new Date(since));
+  return daysSince(since, today);
 }
 
 /**
@@ -851,7 +832,7 @@ export function licensingAlert(
 ): LicensingAlert | null {
   if (!dueDate) return null;
 
-  const days = calendarDayOf(dueDate) - calendarDay(today);
+  const days = daysUntil(dueDate, today);
   if (days < 0) return "overdue";
 
   return days <= LICENSING_WARNING_DAYS ? "due-soon" : null;
@@ -862,5 +843,5 @@ export function daysUntilLicensing(
   dueDate: string,
   today = new Date(),
 ): number {
-  return calendarDayOf(dueDate) - calendarDay(today);
+  return daysUntil(dueDate, today);
 }
