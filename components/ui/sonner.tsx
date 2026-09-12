@@ -1,7 +1,7 @@
 "use client";
 
-import { useTheme } from "next-themes";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { useResolvedTheme } from "@/lib/theme";
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -11,11 +11,13 @@ import {
 } from "lucide-react";
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
+  // Escuro até montar, que é o que o script anti-flash já aplicou: o
+  // `data-sonner-theme` vai no HTML servido e tem que bater no primeiro quadro.
+  const theme = useResolvedTheme() ?? "dark";
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={theme}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

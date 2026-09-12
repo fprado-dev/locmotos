@@ -65,7 +65,11 @@ export function VehicleForm({ vehicle }: { vehicle?: Vehicle }) {
   );
 
   return (
-    <form action={formAction} data-autofill className="flex flex-col gap-4">
+    <form
+      action={formAction}
+      data-autofill
+      className="@container flex flex-col gap-4"
+    >
       {/* A v1 só oferece motos: quem fixa isso é esta tela, não o modelo. */}
       <input type="hidden" name="category" value="motorcycle" />
       {vehicle && <input type="hidden" name="id" value={vehicle.id} />}
@@ -76,7 +80,9 @@ export function VehicleForm({ vehicle }: { vehicle?: Vehicle }) {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 xl:grid-cols-4">
+      {/* Duas colunas no painel lateral, quatro na página de detalhe: quem
+          decide é a largura do formulário, não a da janela. */}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4 @2xl:grid-cols-3 @5xl:grid-cols-4">
         <Field
           name="plate"
           label="Placa"
