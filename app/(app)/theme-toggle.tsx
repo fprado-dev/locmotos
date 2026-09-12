@@ -2,6 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { useResolvedTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,10 +13,11 @@ import { cn } from "@/lib/utils";
  * pior que esperar um quadro.
  */
 export function ThemeToggle() {
-  // `resolvedTheme` só existe depois de montar: no servidor não há como saber
-  // qual tema o navegador guardou.
-  const { resolvedTheme, setTheme } = useTheme();
-  const escuro = resolvedTheme === "dark";
+  const { setTheme } = useTheme();
+  // `undefined` até montar: no servidor não há como saber qual tema o
+  // navegador guardou, e o primeiro quadro tem que bater com o HTML servido.
+  const tema = useResolvedTheme();
+  const escuro = tema === "dark";
 
   return (
     <Button
@@ -28,11 +30,11 @@ export function ThemeToggle() {
       <span
         aria-hidden
         className={cn(
-          "size-[13px] rounded-full border",
-          escuro ? "border-current" : "border-current bg-current",
+          "size-[13px] rounded-full border border-current",
+          tema === "light" && "bg-current",
         )}
       />
-      {resolvedTheme ? (escuro ? "Tema claro" : "Tema escuro") : "Tema"}
+      {tema ? (escuro ? "Tema claro" : "Tema escuro") : "Tema"}
     </Button>
   );
 }
