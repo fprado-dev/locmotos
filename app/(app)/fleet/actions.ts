@@ -14,7 +14,9 @@ import {
   attachVehicleFile,
   createVehicle,
   removeVehicle,
+  removeVehicles,
   setVehicleStatus,
+  setVehiclesStatus,
   updateVehicle,
   VEHICLE_FILE_KINDS,
   VEHICLE_STATUSES,
@@ -134,6 +136,81 @@ export async function changeVehicleStatus(
 
   revalidatePath("/fleet");
   return {};
+}
+
+/**
+ * O que uma ação em lote tem a contar: o que deu errado, ou quantas mudaram.
+ *
+ * O número não é decoração. O gestor marcou cinco linhas; se voltaram três,
+ * duas não eram da locadora dele — e ele precisa saber disso antes de fechar a
+ * tela achando que aplicou em todas.
+ */
+export type BatchState = { error?: string; changed?: number };
+
+/** Os ids vêm do browser como qualquer coisa; só passa lista de texto. */
+function vehicleIds(ids: unknown): string[] {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new UserError("Nenhum veículo selecionado.");
+  }
+
+  const clean = ids.filter(
+    (id): id is string => typeof id === "string" && id.trim() !== "",
+  );
+  if (clean.length === 0) throw new UserError("Nenhum veículo selecionado.");
+
+  return clean;
+}
+
+/**
+ * Altera de uma vez a situação das motos que o gestor marcou.
+ *
+ * Quem decide o que é dele é a RLS, como em toda escrita daqui: id de outra
+ * locadora não é recusado com erro, simplesmente não entra na conta que volta.
+ */
+export async function changeVehiclesStatus(
+  ids: string[],
+  status: VehicleStatus,
+): Promise<BatchState> {
+  let changed: number;
+
+  try {
+    if (!VEHICLE_STATUSES.includes(status)) {
+      throw new UserError("Situação inválida");
+    }
+
+    const client = await createClient();
+    changed = (await setVehiclesStatus(client, vehicleIds(ids), status)).length;
+
+    if (changed === 0) throw new UserError("Nenhum veículo foi alterado.");
+  } catch (error) {
+    if (error instanceof UserError) return { error: error.message };
+
+    console.error("Falha ao alterar a situação em lote", error);
+    return { error: "Não foi possível alterar a situação. Tente de novo." };
+  }
+
+  revalidatePath("/fleet");
+  return { changed };
+}
+
+/** Dá baixa de uma vez nas motos marcadas. Elas saem da lista, as linhas ficam. */
+export async function discardVehicles(ids: string[]): Promise<BatchState> {
+  let changed: number;
+
+  try {
+    const client = await createClient();
+    changed = (await removeVehicles(client, vehicleIds(ids))).length;
+
+    if (changed === 0) throw new UserError("Nenhum veículo foi removido.");
+  } catch (error) {
+    if (error instanceof UserError) return { error: error.message };
+
+    console.error("Falha ao remover veículos em lote", error);
+    return { error: "Não foi possível remover os veículos. Tente de novo." };
+  }
+
+  revalidatePath("/fleet");
+  return { changed };
 }
 
 /**

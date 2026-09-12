@@ -12,14 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -34,6 +26,8 @@ import {
   daysUntilLicensing,
   daysWithoutRental,
   DEFAULT_VEHICLE_SORT,
+  fleetFilterOptions,
+  fleetStatusCounts,
   fleetSummary,
   licensingAlert,
   listVehicles,
@@ -47,7 +41,9 @@ import {
   type VehicleSort,
   type VehicleStatus,
 } from "@/modules/fleet";
+import { FilterSelect } from "./filter-select";
 import { NewVehicleSheet } from "./new-vehicle-sheet";
+import { RowCheckbox, SelectAll, Selection, Toolbar } from "./selection";
 
 type Param = string | string[] | undefined;
 
@@ -254,6 +250,46 @@ function StatusDot({ status }: { status: VehicleStatus }) {
 }
 
 /**
+ * Um chip de situação, com quantas motos ele entregaria.
+ *
+ * O contador não conta a frota: conta o que sobraria deste chip com os outros
+ * filtros de pé. Filtrar por Honda mexe nos números, e é isso que faz do chip
+ * uma pergunta respondida antes de ser clicada.
+ *
+ * Sem `status` é o chip "Todas", que limpa a situação em vez de escolher uma.
+ */
+function StatusChip({
+  status,
+  label,
+  count,
+  filters,
+}: {
+  status?: VehicleStatus;
+  label: string;
+  count: number;
+  filters: VehicleFilters;
+}) {
+  const active = filters.status === status;
+
+  return (
+    <Link
+      href={href(filters, { status, page: undefined })}
+      aria-current={active ? "true" : undefined}
+      className={cn(
+        "flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-[12.5px] transition-colors",
+        active
+          ? "border-input bg-chip font-medium text-foreground"
+          : "border-border text-muted-foreground hover:border-input hover:text-foreground",
+      )}
+    >
+      {status && <StatusDot status={status} />}
+      {label}
+      <span className="tabular-nums text-subtle">{count}</span>
+    </Link>
+  );
+}
+
+/**
  * O que a lista precisa gritar sobre o licenciamento.
  *
  * Vencido em vermelho, vencendo em âmbar — e a cor não carrega a informação
@@ -288,11 +324,21 @@ function VehicleRow({ vehicle }: { vehicle: Vehicle }) {
   return (
     <TableRow
       className={cn(
-        "relative border-b-0 hover:bg-hover",
+        // Quem pinta a linha marcada é o próprio checkbox, via `:has()`: não
+        // há estado de React aqui, e a linha continua sendo do servidor.
+        "relative border-b-0 hover:bg-hover has-[[data-checked]]:bg-sel",
         // Moto fora de operação não compete por atenção com o resto da frota.
         vehicle.status === "unavailable" && "text-muted-foreground",
       )}
     >
+      {/*
+        `z-10` porque o link da linha se estende por cima de tudo com um
+        `::after`: sem subir a célula, marcar a moto abriria o cadastro dela.
+      */}
+      <TableCell className={cn(CELL, "relative z-10 pl-[18px]")}>
+        <RowCheckbox id={vehicle.id} plate={vehicle.plate} />
+      </TableCell>
+
       <TableCell
         className={cn(CELL, "font-mono text-[13px] tracking-[0.02em]")}
       >
@@ -389,10 +435,20 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
   );
 
   const client = await createClient();
-  const [{ vehicles, hasMore, total }, summary] = await Promise.all([
-    listVehicles(client, filters),
-    fleetSummary(client),
-  ]);
+  const [{ vehicles, hasMore, total }, summary, options, counts] =
+    await Promise.all([
+      listVehicles(client, filters),
+      fleetSummary(client),
+      fleetFilterOptions(client),
+      fleetStatusCounts(client, filters),
+    ]);
+
+  // Os filtros como já estão na URL: é o que os selects reescrevem ao mudar.
+  const query = Object.fromEntries(
+    Object.entries(filters)
+      .filter(([key, value]) => value && key !== "page")
+      .map(([key, value]) => [key, String(value)]),
+  );
 
   const first = (page - 1) * VEHICLES_PER_PAGE + 1;
   const pages = Math.max(1, Math.ceil(total / VEHICLES_PER_PAGE));
@@ -452,199 +508,221 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
           />
         </section>
 
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-card">
-          {/*
-            Formulário GET puro: o filtro vira URL, e a URL é o estado. Dá para
-            recarregar, compartilhar e voltar no histórico.
-          */}
-          <form className="flex shrink-0 flex-wrap items-end gap-3 border-b border-border p-4">
-            {/* A ordem escolhida sobrevive a filtrar de novo. */}
-            {filters.sort && (
-              <input type="hidden" name="sort" value={filters.sort} />
-            )}
-            {filters.direction && (
-              <input type="hidden" name="direction" value={filters.direction} />
-            )}
+        {/* A seleção envolve a barra e a tabela: é a barra que muda de forma
+            quando uma linha é marcada, e o cabeçalho que marca as visíveis. */}
+        <Selection visible={vehicles.map((vehicle) => vehicle.id)}>
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-card">
+            <Toolbar>
+              <div className="flex h-full w-full flex-col justify-center gap-3 px-4">
+                {/*
+                A busca continua sendo formulário GET puro: o filtro vira URL, e
+                a URL é o estado. Dá para recarregar, compartilhar e voltar no
+                histórico — e digitar uma placa e apertar Enter funciona sem
+                JavaScript nenhum. Os selects e os chips, que agem no clique,
+                reescrevem a mesma URL.
+              */}
+                <form className="flex items-center gap-2">
+                  {/* O que não está neste formulário mas está na URL volta por
+                    aqui: buscar uma placa não desfaz a ordem nem os selects. */}
+                  {Object.entries(query)
+                    .filter(([key]) => key !== "plate")
+                    .map(([key, value]) => (
+                      <input key={key} type="hidden" name={key} value={value} />
+                    ))}
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="plate-filter">Placa</Label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-subtle" />
-                <Input
-                  id="plate-filter"
-                  name="plate"
-                  defaultValue={filters.plate}
-                  placeholder="Buscar placa"
-                  className="w-[220px] pl-8 font-mono uppercase"
-                />
-              </div>
-            </div>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-subtle" />
+                    <Input
+                      name="plate"
+                      defaultValue={filters.plate}
+                      placeholder="Buscar placa"
+                      aria-label="Buscar placa"
+                      className="w-[220px] pl-8 font-mono uppercase"
+                    />
+                  </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="brand-filter">Marca</Label>
-              <Input
-                id="brand-filter"
-                name="brand"
-                defaultValue={filters.brand}
-                className="w-[130px]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="model-filter">Modelo</Label>
-              <Input
-                id="model-filter"
-                name="model"
-                defaultValue={filters.model}
-                className="w-[150px]"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="year-filter">Ano</Label>
-              <Input
-                id="year-filter"
-                name="year"
-                type="number"
-                defaultValue={filters.year}
-                className="w-24"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <Label>Situação</Label>
-              <Select name="status" defaultValue={filters.status ?? ""}>
-                <SelectTrigger className="w-[164px]">
-                  <SelectValue placeholder="Todas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Todas</SelectItem>
-                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button type="submit">Filtrar</Button>
-            {filtering && (
-              <Link
-                href="/fleet"
-                className={cn(
-                  buttonVariants({ variant: "ghost" }),
-                  "text-brand-text",
-                )}
-              >
-                Limpar filtros
-              </Link>
-            )}
-          </form>
-
-          {vehicles.length === 0 ? (
-            <p className="flex-1 p-6 text-sm text-muted-foreground">
-              {filtering
-                ? "Nenhum veículo encontrado com esse filtro."
-                : "Nenhum veículo cadastrado."}
-            </p>
-          ) : (
-            <Table
-              containerClassName="min-h-0 flex-1 overflow-auto"
-              className="min-w-[1100px] table-fixed border-separate border-spacing-0 text-[13px]"
-            >
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <SortHeader
-                    column="plate"
-                    label="Placa"
-                    filters={filters}
-                    className="w-[118px] pl-[6px]"
+                  <FilterSelect
+                    name="brand"
+                    label="Marca"
+                    value={filters.brand}
+                    query={query}
+                    className="w-[130px]"
+                    options={[
+                      { value: "", label: "Todas as marcas" },
+                      ...options.brands.map((brand) => ({
+                        value: brand,
+                        label: brand,
+                      })),
+                    ]}
                   />
-                  <SortHeader
-                    column="vehicle"
-                    label="Veículo"
-                    filters={filters}
+                  <FilterSelect
+                    name="model"
+                    label="Modelo"
+                    value={filters.model}
+                    query={query}
+                    className="w-[150px]"
+                    options={[
+                      { value: "", label: "Todos os modelos" },
+                      ...options.models.map((model) => ({
+                        value: model,
+                        label: model,
+                      })),
+                    ]}
                   />
-                  <SortHeader
-                    column="year"
+                  <FilterSelect
+                    name="year"
                     label="Ano"
-                    filters={filters}
-                    align="right"
-                    className="w-[72px]"
+                    value={filters.year ? String(filters.year) : undefined}
+                    query={query}
+                    className="w-24"
+                    options={[
+                      { value: "", label: "Todos" },
+                      ...options.years.map((year) => ({
+                        value: String(year),
+                        label: String(year),
+                      })),
+                    ]}
                   />
-                  <SortHeader
-                    column="mileage"
-                    label="Km"
-                    filters={filters}
-                    align="right"
-                    className="w-[104px]"
-                  />
-                  <SortHeader
-                    column="weeklyPrice"
-                    label="R$/semana"
-                    filters={filters}
-                    align="right"
-                    className="w-[116px]"
-                  />
-                  <SortHeader
-                    column="status"
-                    label="Situação"
-                    filters={filters}
-                    className="w-[164px]"
-                  />
-                  <SortHeader
-                    column="daysWithoutRental"
-                    label="Parada há"
-                    filters={filters}
-                    align="right"
-                    className="w-[112px]"
-                  />
-                  <SortHeader
-                    column="licensing"
-                    label="Licenciamento"
-                    filters={filters}
-                    className="w-[190px]"
-                  />
-                </TableRow>
-              </TableHeader>
 
-              <TableBody>
-                {vehicles.map((vehicle) => (
-                  <VehicleRow key={vehicle.id} vehicle={vehicle} />
-                ))}
-              </TableBody>
-            </Table>
-          )}
+                  {filtering && (
+                    <Link
+                      href="/fleet"
+                      className={cn(
+                        buttonVariants({ variant: "ghost" }),
+                        "text-brand-text",
+                      )}
+                    >
+                      Limpar filtros
+                    </Link>
+                  )}
+                </form>
 
-          <footer className="flex h-12 shrink-0 items-center justify-between border-t border-border bg-surface-2 px-[18px] text-[12.5px] text-muted-foreground">
-            <span>
-              {total === 0
-                ? "Nenhum veículo"
-                : `${first}–${first + vehicles.length - 1} de ${formatInteger(total)}`}
-            </span>
+                <div className="flex items-center gap-1.5">
+                  <StatusChip
+                    label="Todas"
+                    count={counts.all}
+                    filters={filters}
+                  />
+                  {VEHICLE_STATUSES.map((value) => (
+                    <StatusChip
+                      key={value}
+                      status={value}
+                      label={STATUS_LABELS[value]}
+                      count={counts[value]}
+                      filters={filters}
+                    />
+                  ))}
+                </div>
+              </div>
+            </Toolbar>
 
-            <span className="flex items-center gap-1.5">
-              <PageStep
-                href={
-                  page === 1 ? undefined : href(filters, { page: page - 1 })
-                }
-                label="Página anterior"
+            {vehicles.length === 0 ? (
+              <p className="flex-1 p-6 text-sm text-muted-foreground">
+                {filtering
+                  ? "Nenhum veículo encontrado com esse filtro."
+                  : "Nenhum veículo cadastrado."}
+              </p>
+            ) : (
+              <Table
+                containerClassName="min-h-0 flex-1 overflow-auto"
+                className="min-w-[1100px] table-fixed border-separate border-spacing-0 text-[13px]"
               >
-                <ChevronLeft />
-              </PageStep>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="sticky top-0 z-10 h-10 w-12 border-b border-border bg-surface-2 pl-[18px]">
+                      <SelectAll />
+                    </TableHead>
+                    <SortHeader
+                      column="plate"
+                      label="Placa"
+                      filters={filters}
+                      className="w-[118px]"
+                    />
+                    <SortHeader
+                      column="vehicle"
+                      label="Veículo"
+                      filters={filters}
+                    />
+                    <SortHeader
+                      column="year"
+                      label="Ano"
+                      filters={filters}
+                      align="right"
+                      className="w-[72px]"
+                    />
+                    <SortHeader
+                      column="mileage"
+                      label="Km"
+                      filters={filters}
+                      align="right"
+                      className="w-[104px]"
+                    />
+                    <SortHeader
+                      column="weeklyPrice"
+                      label="R$/semana"
+                      filters={filters}
+                      align="right"
+                      className="w-[116px]"
+                    />
+                    <SortHeader
+                      column="status"
+                      label="Situação"
+                      filters={filters}
+                      className="w-[164px]"
+                    />
+                    <SortHeader
+                      column="daysWithoutRental"
+                      label="Parada há"
+                      filters={filters}
+                      align="right"
+                      className="w-[112px]"
+                    />
+                    <SortHeader
+                      column="licensing"
+                      label="Licenciamento"
+                      filters={filters}
+                      className="w-[190px]"
+                    />
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {vehicles.map((vehicle) => (
+                    <VehicleRow key={vehicle.id} vehicle={vehicle} />
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+
+            <footer className="flex h-12 shrink-0 items-center justify-between border-t border-border bg-surface-2 px-[18px] text-[12.5px] text-muted-foreground">
               <span>
-                Página {page} de {pages}
+                {total === 0
+                  ? "Nenhum veículo"
+                  : `${first}–${first + vehicles.length - 1} de ${formatInteger(total)}`}
               </span>
-              <PageStep
-                href={hasMore ? href(filters, { page: page + 1 }) : undefined}
-                label="Próxima página"
-              >
-                <ChevronRight />
-              </PageStep>
-            </span>
-          </footer>
-        </section>
+
+              <span className="flex items-center gap-1.5">
+                <PageStep
+                  href={
+                    page === 1 ? undefined : href(filters, { page: page - 1 })
+                  }
+                  label="Página anterior"
+                >
+                  <ChevronLeft />
+                </PageStep>
+                <span>
+                  Página {page} de {pages}
+                </span>
+                <PageStep
+                  href={hasMore ? href(filters, { page: page + 1 }) : undefined}
+                  label="Próxima página"
+                >
+                  <ChevronRight />
+                </PageStep>
+              </span>
+            </footer>
+          </section>
+        </Selection>
       </div>
     </>
   );
