@@ -197,6 +197,27 @@ describe("frota", () => {
 });
 
 describe("situação do veículo", () => {
+  it("nasce na situação que o painel escolheu, e a correção não a apaga", async () => {
+    const manager = await createManager();
+
+    const moto = await createVehicle(manager.client, {
+      ...cg160,
+      plate: "STA0A01",
+      status: "maintenance",
+    });
+    expect(moto.status).toBe("maintenance");
+
+    // A página de detalhe não tem campo de situação: quem a muda lá é o select
+    // do cabeçalho. Salvar o cadastro sem esse campo não pode desfazer isso.
+    const corrigida = await updateVehicle(manager.client, moto.id, {
+      ...cg160,
+      plate: "STA0A01",
+      mileage: 999,
+    });
+
+    expect(corrigida).toMatchObject({ status: "maintenance", mileage: 999 });
+  });
+
   it("nasce disponível, sem o gestor marcar nada", async () => {
     const manager = await createManager();
 

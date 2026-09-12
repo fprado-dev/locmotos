@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -14,14 +16,20 @@ import { VehicleForm } from "./vehicle-form";
 /**
  * O cadastro de veículo, num painel lateral.
  *
- * O formulário é o mesmo de sempre; o que muda é onde ele mora. A lista virou
- * a tela de operação e ocupa a altura toda, então o cadastro sai de dentro
- * dela. O painel do desenho — grid de duas colunas, dropzone de CRLV — é a
- * issue #26; aqui ele só ganha um lugar.
+ * O formulário é o mesmo de sempre; o que muda é onde ele mora. A lista é a
+ * tela onde o gestor passa o dia, e quem ocupa o espaço dela é a frota — o
+ * cadastro entra por cima e sai quando termina.
+ *
+ * Aberto e fechado viram estado porque o painel se fecha sozinho ao salvar:
+ * deixar aberto um formulário já gravado convida a gravar de novo. O aviso vai
+ * em toast, que sobrevive ao painel que o causou; erro de validação fica
+ * dentro, colado ao campo, porque lá ainda há o que corrigir.
  */
 export function NewVehicleSheet() {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger render={<Button size="lg" className="gap-2 px-4" />}>
         <Plus />
         Cadastrar veículo
@@ -32,9 +40,13 @@ export function NewVehicleSheet() {
           <SheetTitle>Cadastrar veículo</SheetTitle>
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          <VehicleForm />
-        </div>
+        <VehicleForm
+          onCancel={() => setOpen(false)}
+          onSaved={(plate) => {
+            setOpen(false);
+            toast.success(`${plate} entrou na frota.`);
+          }}
+        />
       </SheetContent>
     </Sheet>
   );
