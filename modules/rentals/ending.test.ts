@@ -21,6 +21,7 @@ import {
   generateCharges,
   openRental,
   overdueCharges,
+  payCharge,
   rentalCounts,
   rentalHistory,
   rentalWeeks,
@@ -364,5 +365,142 @@ describe("isolamento entre locadoras", () => {
     expect(
       await findRental(compartilhado.client, compartilhado.rentalId),
     ).toMatchObject({ endedEarly: true, depositReturned: 380 });
+  });
+});
+
+/**
+ * O rateio da última semana (issue #46).
+ *
+ * A regra mora em SQL — o gerador de ciclos e o encerramento precisam da mesma
+ * conta —, então o que se prova aqui é o resultado nas duas portas: a semana
+ * que já existia inteira quando a moto voltou, e a que só nasceu depois.
+ *
+ * Reusa o gestor do bloco de cima: cada locadora nova custa um login no Auth
+ * do projeto (`docs/adr/0006`).
+ */
+describe("rateio da última semana", () => {
+  let gestor: SupabaseClient;
+  let hoje: string;
+
+  beforeAll(async () => {
+    gestor = compartilhado.client;
+    hoje = await hojeNoBanco(gestor);
+  });
+
+  /** Uma locação nova, com moto e locatário só dela. */
+  async function locação(startedOn: string, cpf: string): Promise<string> {
+    const [moto, pessoa] = await Promise.all([
+      createVehicle(gestor, {
+        plate: plate(),
+        brand: "Honda",
+        model: "Biz 125",
+        year: 2024,
+        weeklyPrice: 300,
+      }),
+      createRenter(gestor, { name: "Locatário do rateio", cpf }),
+    ]);
+
+    const nova = await openRental(gestor, {
+      vehicleId: moto.id,
+      renterId: pessoa.id,
+      weeklyPrice: 300,
+      startedOn,
+    });
+
+    return nova.id;
+  }
+
+  /** Os ciclos de uma locação, do mais antigo para o mais novo. */
+  async function ciclos(rentalId: string) {
+    const { data, error } = await gestor
+      .from("charges")
+      .select("id, cycle_start, cycle_end, due_on, amount")
+      .eq("rental_id", rentalId)
+      .order("cycle_start", { ascending: true });
+
+    if (error) throw error;
+    return data as Array<{
+      id: string;
+      cycle_start: string;
+      cycle_end: string;
+      due_on: string;
+      amount: number;
+    }>;
+  }
+
+  it("devolver no meio da semana paga os dias andados, não a semana", async () => {
+    const id = await locação(diasAntes(hoje, 10), "168.995.597-06");
+    await generateCharges(gestor);
+
+    await endRental(gestor, id, { endedOn: diasAntes(hoje, 1) });
+
+    const [primeira, última] = await ciclos(id);
+
+    // A semana inteira que ela andou não é tocada: cobrança é fato consumado.
+    expect(primeira).toMatchObject({
+      cycle_start: diasAntes(hoje, 10),
+      cycle_end: diasAntes(hoje, 4),
+      amount: 300,
+    });
+
+    // Três dias de sete: 300 ÷ 7 × 3, ao centavo. E o período encolhe junto,
+    // senão a tela mostraria R$ 128,57 rotulado como uma semana.
+    expect(última).toMatchObject({
+      cycle_start: diasAntes(hoje, 3),
+      cycle_end: diasAntes(hoje, 1),
+      due_on: diasAntes(hoje, 1),
+      amount: 128.57,
+    });
+  });
+
+  it("devolver no último dia do ciclo não rateia nada", async () => {
+    const id = await locação(diasAntes(hoje, 6), "231.002.999-81");
+    await generateCharges(gestor);
+
+    await endRental(gestor, id);
+
+    // O ciclo acabou no dia em que a moto voltou: sete dias de sete.
+    expect(await ciclos(id)).toMatchObject([
+      { cycle_start: diasAntes(hoje, 6), cycle_end: hoje, amount: 300 },
+    ]);
+  });
+
+  it("ciclo já pago fica inteiro: a v1 não sabe guardar crédito", async () => {
+    const id = await locação(diasAntes(hoje, 10), "390.533.447-05");
+    await generateCharges(gestor);
+
+    const [, emCurso] = await ciclos(id);
+    await payCharge(gestor, emCurso.id, { by: "Gestor" });
+
+    await endRental(gestor, id, { endedOn: diasAntes(hoje, 1) });
+
+    expect((await ciclos(id))[1]).toMatchObject({
+      cycle_start: diasAntes(hoje, 3),
+      // O ciclo inteiro, sobrando três dias depois da devolução.
+      cycle_end: diasAntes(hoje, -3),
+      amount: 300,
+    });
+  });
+
+  it("a semana que nasce depois do encerramento já nasce rateada", async () => {
+    // Aberta e encerrada antes de o gerador rodar: no encerramento não há
+    // ciclo nenhum para ratear, e quem acerta a conta é o gerador de amanhã.
+    const id = await locação(diasAntes(hoje, 3), "453.178.287-91");
+    await endRental(gestor, id, { endedOn: diasAntes(hoje, 1) });
+
+    expect(await ciclos(id)).toEqual([]);
+
+    await generateCharges(gestor);
+    expect(await ciclos(id)).toMatchObject([
+      {
+        cycle_start: diasAntes(hoje, 3),
+        cycle_end: diasAntes(hoje, 1),
+        amount: 128.57,
+      },
+    ]);
+
+    // E rodar de novo não cria a semana cheia por cima nem duplica a parcial.
+    expect(await generateCharges(gestor)).toBe(0);
+    expect(await ciclos(id)).toHaveLength(1);
   });
 });

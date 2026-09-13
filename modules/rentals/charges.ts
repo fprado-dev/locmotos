@@ -294,6 +294,30 @@ export async function rentalPayments(
 }
 
 /**
+ * Rateia por dia o ciclo que estava em curso quando a moto voltou.
+ *
+ * A regra mora no banco (`public.settle_last_cycle`) e não aqui porque o
+ * gerador de ciclos precisa exatamente da mesma conta para a semana parcial
+ * que ele cria depois do encerramento. Escrita dos dois lados, ela divergiria
+ * no primeiro arredondamento — e divergência em dinheiro aparece na tela do
+ * locatário.
+ *
+ * Devolve o novo valor, ou `null` quando não havia o que ratear: a locação
+ * acabou no último dia de um ciclo, ou o ciclo em curso já estava pago.
+ */
+export async function settleLastCycle(
+  client: SupabaseClient,
+  rentalId: string,
+): Promise<number | null> {
+  const { data, error } = await client.rpc("settle_last_cycle", {
+    p_rental_id: rentalId,
+  });
+
+  if (error) throw error;
+  return data === null ? null : Number(data);
+}
+
+/**
  * Roda o gerador de ciclos e devolve quantas cobranças nasceram.
  *
  * Quem chama de verdade é o agendamento do banco, todo dia às 3 da manhã. Está

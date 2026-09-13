@@ -28,4 +28,4 @@ Foi descartada por duas razões, e a segunda é a que decide.
 
 **O vencimento é o último dia do ciclo.** O locatário usa a semana e paga por ela. Se a locadora passar a cobrar adiantado ou a dar prazo, quem muda é o gerador — e as cobranças já criadas continuam valendo com a regra que valia no dia em que nasceram. É exatamente o que gravar compra.
 
-**A última semana de uma locação encerrada no meio do ciclo é cobrada inteira.** Rateio é assunto da rescisão, e fica para a issue de encerrar locação.
+**A última semana de uma locação encerrada no meio do ciclo é rateada por dia** — `valor do ciclo ÷ 7 × dias andados`, ao centavo (issue #46). É o encerramento que encolhe a cobrança já criada, e o gerador que já cria encolhida a que nascer depois; a regra mora em `public.cycle_amount` para as duas portas não divergirem no arredondamento. Ciclo já pago fica inteiro: baixar o valor de uma cobrança quitada criaria um crédito que a v1 não sabe guardar.
