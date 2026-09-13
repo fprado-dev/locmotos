@@ -14,7 +14,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { AvailableVehicle } from "@/modules/fleet";
-import type { Charge, Payment, Rental } from "@/modules/rentals";
+import {
+  rentalWeeks,
+  type Charge,
+  type Payment,
+  type Rental,
+} from "@/modules/rentals";
 import { OverdueCharges, RegisteredPayments } from "../charges-block";
 import { FinanceCell } from "../finance";
 import { formatCpf, formatWhatsapp, type Renter } from "@/modules/renters";
@@ -73,6 +78,7 @@ export function RenterPanel({
   rental,
   charges,
   payments,
+  history,
   vehicles,
   closeHref,
 }: {
@@ -83,6 +89,8 @@ export function RenterPanel({
   charges: Charge[];
   /** Os pagamentos já lançados, para desfazer o que entrou errado. */
   payments: Payment[];
+  /** As locações que já terminaram, da mais recente para a mais antiga. */
+  history: Rental[];
   /** As motos livres para uma locação nova. */
   vehicles: AvailableVehicle[];
   closeHref: string;
@@ -270,6 +278,44 @@ export function RenterPanel({
               <OverdueCharges charges={charges} />
 
               <RegisteredPayments payments={payments} />
+
+              {history.length > 0 && (
+                <Section title="Histórico de locações">
+                  {/*
+                    Com que motos a pessoa já andou e por quanto tempo. É o que
+                    responde "vale a pena alugar de novo para ela" sem ninguém
+                    ter que procurar em outra tela — e a locação em pé fica de
+                    fora, porque já tem o cartão dela logo acima.
+                  */}
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    {history.map((anterior) => (
+                      <div
+                        key={anterior.id}
+                        className="flex items-center gap-3 border-b border-border px-4 py-2.5 text-[13px] last:border-b-0"
+                      >
+                        <Link
+                          href={`/rentals?open=${anterior.id}`}
+                          className="shrink-0 rounded-sm font-mono text-[12.5px] hover:underline"
+                        >
+                          {anterior.vehicle.plate}
+                        </Link>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {formatDay(anterior.startedOn)} –{" "}
+                          {formatDay(anterior.endedOn!)}
+                        </span>
+                        {anterior.endedEarly && (
+                          <span className="shrink-0 text-xs text-subtle">
+                            antecipada
+                          </span>
+                        )}
+                        <span className="ml-auto shrink-0 tabular-nums">
+                          {rentalWeeks(anterior)} sem
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
             </div>
 
             <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">

@@ -1,4 +1,10 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import {
+  calendarDay,
+  calendarDayOf,
+  isoDay,
+  isoMonthsAfter,
+} from "@/lib/calendar";
 import { UserError } from "@/lib/user-error";
 import { findVehicle, type VehicleStatus } from "@/modules/fleet";
 import { findRenter } from "@/modules/renters";
@@ -62,6 +68,22 @@ export type Rental = {
   overdueAmount: number;
   /** O vencimento da cobrança em aberto mais antiga, ou `null`. */
   overdueSince: string | null;
+  /**
+   * O encerramento foi antes do fim da fidelidade.
+   *
+   * Gravado e não derivado de `startedOn + commitmentMonths`: a fidelidade é
+   * corrigível, e corrigi-la não pode fazer um encerramento do ano passado
+   * deixar de ter sido antecipado.
+   */
+  endedEarly: boolean;
+  /** Quantas semanas faltavam para o fim da fidelidade, quando foi antecipado. */
+  weeksRemaining: number | null;
+  /** O que o gestor cobrou pela rescisão, se cobrou. O sistema não calcula. */
+  earlyTerminationFee: number | null;
+  /** A conta da caução no encerramento: o que saiu, por quê, e o que voltou. */
+  depositDiscount: number | null;
+  depositDiscountReason: string | null;
+  depositReturned: number | null;
 };
 
 /**
@@ -97,6 +119,12 @@ type RentalRow = {
   renter_name: string;
   overdue_amount: number | string;
   overdue_since: string | null;
+  ended_early: boolean;
+  weeks_remaining: number | null;
+  early_termination_fee: number | string | null;
+  deposit_discount: number | string | null;
+  deposit_discount_reason: string | null;
+  deposit_returned: number | string | null;
 };
 
 /**
@@ -137,6 +165,12 @@ function toRental(row: RentalRow): Rental {
     renterName: row.renter_name,
     overdueAmount: toAmount(row.overdue_amount) ?? 0,
     overdueSince: row.overdue_since,
+    endedEarly: row.ended_early,
+    weeksRemaining: row.weeks_remaining,
+    earlyTerminationFee: toAmount(row.early_termination_fee),
+    depositDiscount: toAmount(row.deposit_discount),
+    depositDiscountReason: row.deposit_discount_reason,
+    depositReturned: toAmount(row.deposit_returned),
   };
 }
 
@@ -339,6 +373,209 @@ export async function openRental(
   if (!aberta) throw new Error("Locação aberta não pôde ser lida de volta.");
 
   return aberta;
+}
+
+/**
+ * Onde a fidelidade termina, e o que falta para lá.
+ *
+ * `null` quando a locação não tem fidelidade acordada: sem prazo combinado não
+ * existe sair antes dele, e o `CONTEXT.md` proíbe inventar o número.
+ *
+ * O corte é o dia: encerrar **no** dia em que a fidelidade se cumpre não é
+ * rescisão antecipada; um dia antes, é — e faltava uma semana.
+ */
+export type Commitment = {
+  /** O dia em que a fidelidade se cumpre. */
+  endsOn: string;
+  /** Encerrar nesta data seria rescisão antecipada. */
+  early: boolean;
+  /** Quantas semanas faltavam. Zero quando já não faltava nenhuma. */
+  weeksRemaining: number;
+};
+
+export function commitmentAt(
+  rental: { startedOn: string; commitmentMonths: number | null },
+  endedOn: string,
+): Commitment | null {
+  if (!rental.commitmentMonths) return null;
+
+  const endsOn = isoMonthsAfter(rental.startedOn, rental.commitmentMonths);
+  const faltando = calendarDayOf(endsOn) - calendarDayOf(endedOn);
+
+  return {
+    endsOn,
+    early: faltando > 0,
+    // Semana começada é semana que faltava: quem sai com três dias para o fim
+    // saiu antes, e arredondar para baixo diria que não faltava nada.
+    weeksRemaining: Math.max(0, Math.ceil(faltando / 7)),
+  };
+}
+
+/**
+ * Quantas semanas a locação durou — ou dura, se ainda está de pé.
+ *
+ * É a mesma conta que o gerador de ciclos faz: a semana começada conta
+ * inteira, então o número bate com quantas cobranças a locação gerou. Duas
+ * contas diferentes para "quantas semanas" acabariam divergindo na tela.
+ */
+export function rentalWeeks(
+  rental: { startedOn: string; endedOn: string | null },
+  today = new Date(),
+): number {
+  const fim = rental.endedOn
+    ? calendarDayOf(rental.endedOn)
+    : calendarDay(today);
+
+  return Math.max(
+    1,
+    Math.ceil((fim - calendarDayOf(rental.startedOn) + 1) / 7),
+  );
+}
+
+/**
+ * O que o gestor decide no encerramento.
+ *
+ * Tudo opcional: encerrar hoje, sem desconto e sem cobrança de rescisão é o
+ * caso comum — a moto voltou, a caução volta inteira.
+ */
+export type Ending = {
+  /** Quando a moto voltou. Ausente é hoje. */
+  endedOn?: string | null;
+  depositDiscount?: number | null;
+  depositDiscountReason?: string | null;
+  /** O que foi cobrado pela rescisão. Digitado, nunca calculado. */
+  earlyTerminationFee?: number | null;
+};
+
+/**
+ * Encerra uma locação: a moto volta para a frota e o locatário fica livre.
+ *
+ * Quase nada disso é escrito aqui, e é esse o ponto. A moto volta a
+ * `available` porque "reservada" é derivada de locação ativa desde a #35; o
+ * locatário fica livre porque o índice único de locação ativa passa a não
+ * pegá-lo; a lista de ativas encolhe porque "ativa" é `ended_on is null`.
+ * Encerrar é gravar uma data — o resto é consequência de leitura.
+ *
+ * O que **não** acontece: cobrança vencida e não paga não é apagada. Ela
+ * continua devida depois da devolução da moto, e quem avisa antes de confirmar
+ * é a tela.
+ *
+ * A rescisão antecipada é **registrada, não calculada**. Quanto paga quem sai
+ * antes do fim da fidelidade é a lacuna nº 2 do `CONTEXT.md`, e só o dono da
+ * locadora responde. Aqui fica gravado que foi antecipada e quantas semanas
+ * faltavam — o dado de que a regra vai precisar no dia em que existir.
+ */
+export async function endRental(
+  client: SupabaseClient,
+  id: string,
+  ending: Ending = {},
+  today = new Date(),
+): Promise<Rental> {
+  const atual = await findRental(client, id);
+  if (!atual) throw new UserError("Locação não encontrada.");
+
+  if (atual.endedOn) {
+    throw new UserError(
+      `Esta locação já foi encerrada em ${day(atual.endedOn)}.`,
+    );
+  }
+
+  const hoje = isoDay(today);
+  const endedOn = ending.endedOn || hoje;
+
+  if (endedOn > hoje) {
+    throw new UserError(
+      "A data de encerramento não pode estar no futuro.",
+      "endedOn",
+    );
+  }
+
+  if (endedOn < atual.startedOn) {
+    throw new UserError(
+      `A locação começou em ${day(atual.startedOn)} e não pode ser encerrada antes disso.`,
+      "endedOn",
+    );
+  }
+
+  const caução = atual.deposit;
+  const desconto = ending.depositDiscount ?? 0;
+  const motivo = ending.depositDiscountReason?.trim() || null;
+
+  if (desconto > 0 && !motivo) {
+    throw new UserError(
+      "Informe o motivo do desconto na caução.",
+      "depositDiscountReason",
+    );
+  }
+
+  if (desconto > (caução ?? 0)) {
+    throw new UserError(
+      caução
+        ? `O desconto não pode passar da caução de R$ ${caução.toFixed(2)}.`
+        : "Esta locação não tem caução para descontar.",
+      "depositDiscount",
+    );
+  }
+
+  const fidelidade = commitmentAt(atual, endedOn);
+
+  const { data, error } = await client
+    .from(WRITE)
+    .update({
+      ended_on: endedOn,
+      ended_early: fidelidade?.early ?? false,
+      weeks_remaining: fidelidade?.early ? fidelidade.weeksRemaining : null,
+      early_termination_fee: ending.earlyTerminationFee ?? null,
+      // Sem caução não há conta de caução: as três colunas ficam nulas em vez
+      // de gravar zeros que pareceriam uma devolução que nunca houve.
+      deposit_discount: caução === null ? null : desconto,
+      deposit_discount_reason: caução === null ? null : motivo,
+      deposit_returned: caução === null ? null : caução - desconto,
+    })
+    .eq("id", id)
+    // A corrida: duas telas encerrando a mesma locação. A segunda não acha
+    // linha para atualizar, e recebe recado em vez de sobrescrever a conta da
+    // primeira.
+    .is("ended_on", null)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    throw new UserError(
+      "Esta locação acabou de ser encerrada em outra tela. Recarregue.",
+    );
+  }
+
+  const encerrada = await findRental(client, id);
+  if (!encerrada)
+    throw new Error("Locação encerrada não pôde ser lida de volta.");
+
+  return encerrada;
+}
+
+/**
+ * As locações encerradas de um locatário, da mais recente para a mais antiga.
+ *
+ * É o bloco "Histórico de locações" do painel: com que motos a pessoa já
+ * andou, por quanto tempo, e como cada uma terminou. A locação em pé fica de
+ * fora — ela já tem o cartão dela logo acima.
+ */
+export async function rentalHistory(
+  client: SupabaseClient,
+  renterId: string,
+  limit = 10,
+): Promise<Rental[]> {
+  const { data, error } = await client
+    .from(READ)
+    .select("*")
+    .eq("renter_id", renterId)
+    .not("ended_on", "is", null)
+    .order("ended_on", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data as RentalRow[]).map(toRental);
 }
 
 /** Quantas locações cabem numa página da lista. */

@@ -53,7 +53,7 @@ _Código_: `commitmentTerm`
 _Evitar_: tempo mínimo, prazo mínimo, carência, lock-in
 
 **Rescisão antecipada**:
-Encerramento de uma locação antes do fim da fidelidade.
+Encerramento de uma locação antes do fim da fidelidade. Fica registrado na locação, com quantas semanas faltavam — o sistema **não calcula penalidade**: quanto se cobra é a lacuna nº 2, e o valor é digitado pelo gestor.
 _Código_: `earlyTermination`
 _Evitar_: cancelamento, quebra de contrato
 
@@ -63,7 +63,7 @@ _Código_: `weeklyPrice`
 _Evitar_: mensalidade, diária, tarifa
 
 **Caução**:
-Valor retido no início da locação e devolvido no encerramento, descontadas avarias e débitos em aberto.
+Valor retido no início da locação e devolvido no encerramento, descontadas avarias e débitos em aberto. O desconto por avaria é digitado pelo gestor, com motivo registrado. O débito em aberto **não** é abatido sozinho: cobrança vencida sobrevive ao encerramento e continua devida, e a tela avisa antes de confirmar.
 _Código_: `deposit`
 _Evitar_: depósito, garantia, entrada, sinal
 
@@ -126,7 +126,7 @@ _Código_: `VehicleStatus`
 _Evitar_: estado, disponibilidade, condição
 
 **Dias sem locação**:
-Há quantos dias um veículo está parado. Calculado na leitura, nunca guardado. Conta a partir da data de cadastro — moto que nunca foi alugada está parada desde que entrou na frota. Passa a contar da última devolução quando o **encerramento** de locação existir, e só o argumento muda.
+Há quantos dias um veículo está parado. Calculado na leitura, nunca guardado. Conta a partir da última devolução, ou da data de cadastro para a moto que nunca foi alugada.
 _Código_: `daysWithoutRental`
 _Evitar_: ociosidade, dias parado, idle
 

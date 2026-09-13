@@ -24,6 +24,7 @@ import { availableVehicles } from "@/modules/fleet";
 import {
   activeRentalForRenter,
   overdueCharges,
+  rentalHistory,
   rentalPayments,
 } from "@/modules/rentals";
 import {
@@ -337,21 +338,31 @@ export default async function RentersPage({
   const filtering = Boolean(filters.q || filters.situation);
 
   const client = await createClient();
-  const [{ renters, hasMore, total }, cards, tenant, aberta, locação, motos] =
-    await Promise.all([
-      listRenters(client, filters),
-      // Sem filtro: os cards são da carteira inteira, e não podem mudar porque
-      // o gestor digitou três letras de um nome.
-      renterCounts(client),
-      currentTenant(client),
-      // A pessoa aberta no painel pode não estar nesta página — o link veio de
-      // outro filtro, ou de um endereço colado.
-      aberto ? findRenter(client, aberto) : null,
-      // O acordo inteiro é do módulo de Locações; a lista só carrega a placa.
-      aberto ? activeRentalForRenter(client, aberto) : null,
-      // As motos do seletor de nova locação: só custam quando o painel abre.
-      aberto ? availableVehicles(client) : [],
-    ]);
+  const [
+    { renters, hasMore, total },
+    cards,
+    tenant,
+    aberta,
+    locação,
+    motos,
+    histórico,
+  ] = await Promise.all([
+    listRenters(client, filters),
+    // Sem filtro: os cards são da carteira inteira, e não podem mudar porque
+    // o gestor digitou três letras de um nome.
+    renterCounts(client),
+    currentTenant(client),
+    // A pessoa aberta no painel pode não estar nesta página — o link veio de
+    // outro filtro, ou de um endereço colado.
+    aberto ? findRenter(client, aberto) : null,
+    // O acordo inteiro é do módulo de Locações; a lista só carrega a placa.
+    aberto ? activeRentalForRenter(client, aberto) : null,
+    // As motos do seletor de nova locação: só custam quando o painel abre.
+    aberto ? availableVehicles(client) : [],
+    // O histórico é do locatário, não da locação: existe mesmo para quem
+    // está sem moto agora.
+    aberto ? rentalHistory(client, aberto) : [],
+  ]);
 
   // As cobranças em aberto dependem de qual é a locação, então vêm depois
   // dela — e só quando o painel está aberto, que é quando alguém as lê.
@@ -607,6 +618,7 @@ export default async function RentersPage({
           rental={locação}
           charges={emAberto}
           payments={pagos}
+          history={histórico}
           vehicles={motos}
           closeHref={href(filters, { open: undefined })}
         />
