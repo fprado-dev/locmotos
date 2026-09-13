@@ -70,12 +70,12 @@ _Evitar_: depósito, garantia, entrada, sinal
 ## Dinheiro
 
 **Ciclo**:
-Semana de cobrança de uma locação. É a unidade de tempo do negócio.
+Semana de cobrança de uma locação. É a unidade de tempo do negócio. Gravado linha a linha, não derivado da data de início (`docs/adr/0009`): cobrança é fato consumado, e corrigir o valor semanal não pode reescrever o que já foi cobrado.
 _Código_: `BillingCycle`
 _Evitar_: período, competência, mês
 
 **Cobrança**:
-Valor que o locatário deve por um ciclo.
+Valor que o locatário deve por um ciclo. Vence no último dia do ciclo — o locatário usa a semana e paga por ela. Uma locação aberta hoje não nasce devendo.
 _Código_: `Charge`
 _Evitar_: parcela, fatura, boleto, mensalidade, título
 
@@ -85,7 +85,7 @@ _Código_: `Payment`
 _Evitar_: baixa, quitação, recebimento
 
 **Inadimplência**:
-Condição de uma locação que tem cobrança vencida e não paga. **Não é um estado do ciclo de vida** — uma locação pode estar simultaneamente ativa e inadimplente.
+Condição de uma locação que tem cobrança vencida e não paga. **Não é um estado do ciclo de vida** — uma locação pode estar simultaneamente ativa e inadimplente. Os dias de atraso e o total em aberto são derivados na leitura, a partir da cobrança em aberto mais antiga; não existe coluna que os guarde.
 _Código_: `delinquency`
 _Evitar_: atraso, débito, status inadimplente
 

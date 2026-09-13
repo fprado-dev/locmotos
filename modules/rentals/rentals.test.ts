@@ -414,7 +414,11 @@ describe("a lista de Locações e os chips de Locatários", () => {
       all: 2,
       active: 2,
       ended: 0,
+      // Ninguém aqui passou do vencimento: as locações nasceram agora, e o
+      // primeiro ciclo só vence daqui a seis dias.
+      overdue: 0,
       activeWeeklyPrice: 720,
+      overdueAmount: 0,
     });
   });
 

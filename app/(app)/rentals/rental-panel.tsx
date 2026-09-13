@@ -12,7 +12,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import type { Rental } from "@/modules/rentals";
+import type { Charge, Rental } from "@/modules/rentals";
+import { OverdueCharges } from "../finance";
 
 /** Um título de seção do painel. */
 function Section({
@@ -61,9 +62,12 @@ function Datum({
  */
 export function RentalPanel({
   rental,
+  charges,
   closeHref,
 }: {
   rental: Rental;
+  /** As cobranças vencidas e não pagas, já lidas pela tela. */
+  charges: Charge[];
   closeHref: string;
 }) {
   const router = useRouter();
@@ -161,11 +165,7 @@ export function RentalPanel({
             </div>
           </Section>
 
-          {/*
-            Cobranças em aberto entram aqui quando existirem ciclos. O lugar
-            fica marcado, e não improvisado: um bloco que só sabe dizer "nada"
-            promete uma informação que o sistema ainda não tem.
-          */}
+          <OverdueCharges charges={charges} />
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">

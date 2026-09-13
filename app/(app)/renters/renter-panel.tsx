@@ -14,7 +14,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { AvailableVehicle } from "@/modules/fleet";
-import type { Rental } from "@/modules/rentals";
+import type { Charge, Rental } from "@/modules/rentals";
+import { FinanceCell, OverdueCharges } from "../finance";
 import { formatCpf, formatWhatsapp, type Renter } from "@/modules/renters";
 import { liftRenterRestriction } from "./actions";
 import { CnhBadge } from "./cnh-badge";
@@ -69,12 +70,15 @@ function Datum({
 export function RenterPanel({
   renter,
   rental,
+  charges,
   vehicles,
   closeHref,
 }: {
   renter: Renter;
   /** A locação ativa, quando há uma. */
   rental: Rental | null;
+  /** As cobranças vencidas e não pagas dessa locação. */
+  charges: Charge[];
   /** As motos livres para uma locação nova. */
   vehicles: AvailableVehicle[];
   closeHref: string;
@@ -208,11 +212,17 @@ export function RenterPanel({
                       <span className="truncate text-[13px] text-muted-foreground">
                         {rental.vehicle.brand} {rental.vehicle.model}
                       </span>
+                      {/* O sinal financeiro no cabeçalho do cartão: quem abre
+                          o painel de alguém quer saber se pode alugar de novo,
+                          e é isto que responde antes de qualquer outra coisa. */}
+                      <span className="ml-auto shrink-0 text-[13px]">
+                        <FinanceCell rental={rental} />
+                      </span>
                       {/* A moto está a um clique: é dela que vêm quilometragem,
                           licenciamento e documentos. */}
                       <Link
                         href={`/fleet/${rental.vehicleId}`}
-                        className="ml-auto shrink-0 rounded-sm text-xs text-brand-text hover:underline"
+                        className="shrink-0 rounded-sm text-xs text-brand-text hover:underline"
                       >
                         Ver moto
                       </Link>
@@ -252,6 +262,8 @@ export function RenterPanel({
                   </p>
                 )}
               </Section>
+
+              <OverdueCharges charges={charges} />
             </div>
 
             <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">
