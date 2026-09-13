@@ -803,6 +803,16 @@ export async function updateVehicle(
  * pode dar baixa nele, e a policy que existe basta. O `is("deleted_at", null)`
  * antes do update deixa a segunda baixa de fora da resposta em vez de mexer na
  * data da primeira.
+ *
+ * **Moto alugada não sai da frota.** Não é erro de conta, é erro de ordem: uma
+ * moto que está na rua com alguém volta antes de ser baixada. Sem esta recusa
+ * o cadastro some, a locação continua de pé, e o card "Motos alugadas" passa a
+ * poder marcar mais de 100% — porque `fleetSummary` não conta moto baixada.
+ *
+ * Ela fica de fora do lote em vez de derrubá-lo inteiro, como já acontece em
+ * `setVehiclesStatus`: quem chamou compara o tamanho e conta ao gestor o que
+ * de fato aconteceu. Quem dá nome ao ocupante é a camada de cima — Frota não
+ * lê Locações, e é o `dependency-cruiser` quem faz essa conta.
  */
 export async function removeVehicles(
   client: SupabaseClient,
@@ -810,10 +820,25 @@ export async function removeVehicles(
 ): Promise<Vehicle[]> {
   if (ids.length === 0) return [];
 
+  // A situação derivada vem da view: `reserved` é "tem locação ativa".
+  const { data: atuais, error: readError } = await client
+    .from(READ)
+    .select("id, status")
+    .in("id", ids)
+    .is("deleted_at", null);
+
+  if (readError) throw readError;
+
+  const livres = (atuais as Pick<VehicleRow, "id" | "status">[])
+    .filter((row) => row.status !== "reserved")
+    .map((row) => row.id);
+
+  if (livres.length === 0) return [];
+
   const { data, error } = await client
     .from(WRITE)
     .update({ deleted_at: new Date().toISOString() })
-    .in("id", ids)
+    .in("id", livres)
     .is("deleted_at", null)
     .select(COLUMNS);
 
