@@ -18,6 +18,7 @@ import {
   DEFAULT_RENTAL_SORT,
   findRental,
   listRentals,
+  overdueCharges,
   rentalCounts,
   RENTAL_SITUATIONS,
   RENTAL_SORTS,
@@ -28,6 +29,7 @@ import {
   type RentalSort,
   type SortDirection,
 } from "@/modules/rentals";
+import { FinanceCell } from "../finance";
 import { LiveSearch } from "../live-search";
 import { Pagination, SortHeader } from "../sort-header";
 import { RentalPanel } from "./rental-panel";
@@ -38,6 +40,7 @@ type Param = string | string[] | undefined;
 const SITUATION_LABELS: Record<RentalSituation, string> = {
   active: "Ativas",
   ended: "Encerradas",
+  overdue: "Inadimplentes",
 };
 
 /** O que veio na URL é texto de fora: só passa o que dá para usar. */
@@ -244,12 +247,10 @@ function RentalRow({
         )}
       </TableCell>
 
-      {/*
-        A coluna Financeiro — em dia, atrasado há N dias — entra aqui quando
-        existirem ciclos e cobranças. Ela não é improvisada com um traço
-        permanente: uma coluna que só sabe dizer "—" ensina o gestor a não
-        olhar para ela.
-      */}
+      <TableCell className={CELL}>
+        <FinanceCell rental={rental} />
+      </TableCell>
+
       <TableCell className={cn(CELL, "pr-[18px]")}>
         <span className="flex items-center gap-2">
           <SituationDot ended={ended} />
@@ -279,8 +280,8 @@ export default async function RentalsPage({
   const filtering = Boolean(filters.q || filters.situation);
 
   const client = await createClient();
-  const [{ rentals, hasMore, total }, cards, frota, aberta] = await Promise.all(
-    [
+  const [{ rentals, hasMore, total }, cards, frota, aberta, emAberto] =
+    await Promise.all([
       listRentals(client, filters),
       // Sem filtro: os cards são da locadora inteira, e não podem mudar porque
       // o gestor digitou três letras de uma placa.
@@ -291,8 +292,9 @@ export default async function RentalsPage({
       // A locação aberta no painel pode não estar nesta página — o link veio
       // de outro filtro, do painel do locatário, ou de um endereço colado.
       aberto ? findRental(client, aberto) : null,
-    ],
-  );
+      // As cobranças em aberto só custam quando o painel abre.
+      aberto ? overdueCharges(client, aberto) : [],
+    ]);
 
   // O contador do chip responde "quantas sobrariam se eu clicasse aqui": a
   // busca mexe nos números, e sem busca é a mesma conta dos cards.
@@ -442,7 +444,7 @@ export default async function RentalsPage({
           ) : (
             <Table
               containerClassName="min-h-0 flex-1 overflow-auto"
-              className="min-w-[980px] table-fixed border-separate border-spacing-0 text-[13px]"
+              className="min-w-[1112px] table-fixed border-separate border-spacing-0 text-[13px]"
             >
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -490,6 +492,17 @@ export default async function RentalsPage({
                     align="right"
                     className="w-[120px]"
                   />
+                  <SortHeader
+                    column="finance"
+                    label="Financeiro"
+                    sort={ordem}
+                    direction={sentido}
+                    // A mais antiga em aberto primeiro: é a ordem de quem vai
+                    // cobrar. O chip diz quem deve, a coluna diz desde quando.
+                    first="asc"
+                    href={sortHref}
+                    className="w-[132px]"
+                  />
                   {/* Situação não é ordenável: ela é chip, e ordenar por ela
                       responderia a mesma pergunta duas vezes. */}
                   <TableHead className="sticky top-0 z-10 h-10 w-[190px] border-b border-border bg-surface-2 px-3 text-xs font-medium text-muted-foreground">
@@ -527,6 +540,7 @@ export default async function RentalsPage({
       {aberta && (
         <RentalPanel
           rental={aberta}
+          charges={emAberto}
           closeHref={href(filters, { open: undefined })}
         />
       )}

@@ -36,12 +36,22 @@ export type Renter = {
   /**
    * A locação ativa, quando há uma.
    *
-   * Só a placa e o id: é o que a lista mostra na coluna "Locação atual" e o
-   * que o painel precisa para chegar à locação. O acordo inteiro — valor
-   * semanal, início, fidelidade, caução — é do módulo de Locações, e quem
-   * quiser lê de lá.
+   * O id, a placa e o que a locação deve: é o que a lista mostra nas colunas
+   * "Locação atual" e "Financeiro", e o que o painel precisa para chegar à
+   * locação. O acordo inteiro — valor semanal, início, fidelidade, caução — é
+   * do módulo de Locações, e quem quiser lê de lá.
+   *
+   * O par `overdueAmount`/`overdueSince` vem cru de propósito: quem o traduz
+   * em dias de atraso é `delinquency()`, no módulo de Locações. Importá-lo
+   * daqui fecharia um ciclo — Locações já lê Locatários para recusar quem tem
+   * restrição.
    */
-  rental: { id: string; plate: string | null } | null;
+  rental: {
+    id: string;
+    plate: string | null;
+    overdueAmount: number;
+    overdueSince: string | null;
+  } | null;
 };
 
 /**
@@ -70,18 +80,27 @@ type RenterRow = {
     created_by_name: string;
     created_at: string;
   }[];
-  rentals: { id: string; vehicles: { plate: string } | null }[];
+  rental_details: {
+    id: string;
+    plate: string | null;
+    overdue_amount: number | string;
+    overdue_since: string | null;
+  }[];
 };
 
 /**
  * As colunas de uma leitura de locatário.
  *
  * A restrição e a locação vêm embutidas e filtradas pela vigência — o
- * `is("restrictions.lifted_at", null)` e o `is("rentals.ended_on", null)` de
- * cada consulta. Com `!inner` a embutida deixa de ser enfeite e passa a
- * recortar: só volta quem está restrito, ou quem tem locação, que são chips da
- * tela. O `!left` explícito da locação é o que deixa `filtered` pedir a
- * ausência dela, para o chip "Sem locação".
+ * `is("restrictions.lifted_at", null)` e o `is("rental_details.ended_on",
+ * null)` de cada consulta. Com `!inner` a embutida deixa de ser enfeite e
+ * passa a recortar: só volta quem está restrito, ou quem tem locação, que são
+ * chips da tela. O `!left` explícito da locação é o que deixa `filtered` pedir
+ * a ausência dela, para o chip "Sem locação".
+ *
+ * A locação entra pela view `rental_details` e não pela tabela: é ela que traz
+ * a placa sem uma segunda embutida e o quanto a locação deve já somado — a
+ * coluna "Financeiro" da lista.
  */
 function columns(situation?: RenterSituation): string {
   const restritos = situation === "restricted" ? "!inner" : "";
@@ -90,14 +109,14 @@ function columns(situation?: RenterSituation): string {
   return (
     `*, tenants(name), ` +
     `restrictions${restritos}(id, reason, created_by_name, created_at), ` +
-    `rentals${comLocação}(id, vehicles(plate))`
+    `rental_details${comLocação}(id, plate, overdue_amount, overdue_since)`
   );
 }
 
 // Quem chama o módulo fala o vocabulário do domínio, não o do banco.
 function toRenter(row: RenterRow): Renter {
   const [restriction] = row.restrictions ?? [];
-  const [rental] = row.rentals ?? [];
+  const [rental] = row.rental_details ?? [];
 
   return {
     id: row.id,
@@ -119,7 +138,12 @@ function toRenter(row: RenterRow): Renter {
         }
       : null,
     rental: rental
-      ? { id: rental.id, plate: rental.vehicles?.plate ?? null }
+      ? {
+          id: rental.id,
+          plate: rental.plate,
+          overdueAmount: Number(rental.overdue_amount ?? 0),
+          overdueSince: rental.overdue_since,
+        }
       : null,
   };
 }
@@ -205,7 +229,7 @@ export async function updateRenter(
     .is("deleted_at", null)
     .select(columns())
     .is("restrictions.lifted_at", null)
-    .is("rentals.ended_on", null)
+    .is("rental_details.ended_on", null)
     .maybeSingle();
 
   if (error) throw toDomainError(error, row.cpf);
@@ -228,7 +252,7 @@ export async function findRenter(
     .eq("id", id)
     .is("deleted_at", null)
     .is("restrictions.lifted_at", null)
-    .is("rentals.ended_on", null)
+    .is("rental_details.ended_on", null)
     .maybeSingle();
 
   if (error) throw error;
@@ -451,7 +475,7 @@ function filtered<T extends Filterable>(
     // pedi-la nula é o que sobra de quem não tem nenhuma aberta. "restricted" e
     // "with-rental" não são condição — são o `!inner` da própria embutida.
     if (filters.situation === "without-rental") {
-      atual = atual.is("rentals", null);
+      atual = atual.is("rental_details", null);
     }
   }
 
@@ -483,7 +507,7 @@ export async function listRenters(
       .select(columns(filters.situation), count)
       .is("deleted_at", null)
       .is("restrictions.lifted_at", null)
-      .is("rentals.ended_on", null);
+      .is("rental_details.ended_on", null);
 
     return filtered(query, filters, { today });
   }
@@ -540,7 +564,11 @@ export async function listRenters(
  * em SQL seria a mesma conta em dois lugares. Vira view agregada quando uma
  * locadora passar de alguns milhares de locatários.
  */
-export type RenterCounts = Record<RenterSituation | "all", number>;
+export type RenterCounts = Record<RenterSituation | "all", number> & {
+  /** Quantos estão com cobrança vencida e não paga, e quanto somam. */
+  delinquent: number;
+  overdueAmount: number;
+};
 
 export async function renterCounts(
   client: SupabaseClient,
@@ -549,10 +577,12 @@ export async function renterCounts(
 ): Promise<RenterCounts> {
   const query = client
     .from("renters")
-    .select("cnh_due_date, restrictions(id), rentals(id)")
+    .select(
+      "cnh_due_date, restrictions(id), rental_details(id, overdue_amount)",
+    )
     .is("deleted_at", null)
     .is("restrictions.lifted_at", null)
-    .is("rentals.ended_on", null);
+    .is("rental_details.ended_on", null);
 
   const { data, error } = await filtered(query, filters, {
     skipSituation: true,
@@ -563,7 +593,7 @@ export async function renterCounts(
 
   const rows = data as unknown as Pick<
     RenterRow,
-    "cnh_due_date" | "restrictions" | "rentals"
+    "cnh_due_date" | "restrictions" | "rental_details"
   >[];
 
   const counts: RenterCounts = {
@@ -573,11 +603,23 @@ export async function renterCounts(
     restricted: 0,
     "cnh-overdue": 0,
     "cnh-due-soon": 0,
+    delinquent: 0,
+    overdueAmount: 0,
   };
 
   for (const row of rows) {
-    if (row.rentals?.length) counts["with-rental"] += 1;
+    const [locação] = row.rental_details ?? [];
+
+    if (locação) counts["with-rental"] += 1;
     else counts["without-rental"] += 1;
+
+    // O card "Inadimplentes": quantas pessoas devem, e quanto. A soma já veio
+    // da view — o corte de "vencido" é um só, e é o do banco.
+    const devendo = Number(locação?.overdue_amount ?? 0);
+    if (devendo > 0) {
+      counts.delinquent += 1;
+      counts.overdueAmount += devendo;
+    }
 
     if (row.restrictions?.length) counts.restricted += 1;
 
@@ -602,7 +644,7 @@ export async function rentersByIds(
     .in("id", ids)
     .is("deleted_at", null)
     .is("restrictions.lifted_at", null)
-    .is("rentals.ended_on", null)
+    .is("rental_details.ended_on", null)
     .order("name", { ascending: true });
 
   if (error) throw error;
@@ -703,7 +745,7 @@ export async function removeRenters(
     .is("deleted_at", null)
     .select(columns())
     .is("restrictions.lifted_at", null)
-    .is("rentals.ended_on", null);
+    .is("rental_details.ended_on", null);
 
   if (error) throw error;
   return (data as unknown as RenterRow[]).map(toRenter);

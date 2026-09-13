@@ -21,7 +21,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { availableVehicles } from "@/modules/fleet";
-import { activeRentalForRenter } from "@/modules/rentals";
+import { activeRentalForRenter, overdueCharges } from "@/modules/rentals";
 import {
   DEFAULT_RENTER_SORT,
   listRenters,
@@ -40,6 +40,7 @@ import {
   type SortDirection,
 } from "@/modules/renters";
 import { currentTenant } from "@/modules/tenants";
+import { FinanceCell } from "../finance";
 import { LiveSearch } from "../live-search";
 import { RowCheckbox, SelectAll, Selection, Toolbar } from "../selection";
 import { Pagination, SortHeader } from "../sort-header";
@@ -287,6 +288,10 @@ function RenterRow({
       </TableCell>
 
       <TableCell className={CELL}>
+        <FinanceCell rental={renter.rental} />
+      </TableCell>
+
+      <TableCell className={CELL}>
         {renter.restriction ? (
           <Badge
             title={renter.restriction.reason}
@@ -344,6 +349,10 @@ export default async function RentersPage({
       aberto ? availableVehicles(client) : [],
     ]);
 
+  // As cobranças em aberto dependem de qual é a locação, então vêm depois
+  // dela — e só quando o painel está aberto, que é quando alguém as lê.
+  const emAberto = locação ? await overdueCharges(client, locação.id) : [];
+
   // O contador do chip responde "quantos sobrariam se eu clicasse aqui": a
   // busca mexe nos números, e sem busca é a mesma conta dos cards.
   const chips = filters.q
@@ -392,12 +401,7 @@ export default async function RentersPage({
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col px-8 pb-6">
-        {/*
-          Quatro cards, e não os cinco que a tela vai ter: "Inadimplentes" lê
-          cobrança, que ainda não existe. Um número inventado no topo da tela
-          seria pior que um card a menos.
-        */}
-        <section className="mt-1 mb-4 grid shrink-0 grid-cols-4 gap-3">
+        <section className="mt-1 mb-4 grid shrink-0 grid-cols-5 gap-3">
           <SummaryCard
             label="Total de locatários"
             value={formatInteger(cards.all)}
@@ -408,6 +412,12 @@ export default async function RentersPage({
             dot="var(--ok)"
             value={formatInteger(cards["with-rental"])}
             note={`${formatInteger(cards["without-rental"])} sem locação`}
+          />
+          <SummaryCard
+            label="Inadimplentes"
+            dot="var(--destructive)"
+            value={formatInteger(cards.delinquent)}
+            note={`R$ ${formatInteger(cards.overdueAmount)} em aberto`}
           />
           <SummaryCard
             label="Com restrição"
@@ -497,7 +507,7 @@ export default async function RentersPage({
             ) : (
               <Table
                 containerClassName="min-h-0 flex-1 overflow-auto"
-                className="min-w-[1100px] table-fixed border-separate border-spacing-0 text-[13px]"
+                className="min-w-[1232px] table-fixed border-separate border-spacing-0 text-[13px]"
               >
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -531,6 +541,13 @@ export default async function RentersPage({
                     />
                     <TableHead className="sticky top-0 z-10 h-10 w-[118px] border-b border-border bg-surface-2 px-3 text-xs font-medium text-muted-foreground">
                       Locação atual
+                    </TableHead>
+                    {/* Financeiro não é ordenável nesta tela: a soma vem de
+                        uma tabela embutida, e o PostgREST não ordena por
+                        coluna de embutida. Quem quer a fila de cobrança
+                        ordenada por dias a tem em Locações. */}
+                    <TableHead className="sticky top-0 z-10 h-10 w-[132px] border-b border-border bg-surface-2 px-3 text-xs font-medium text-muted-foreground">
+                      Financeiro
                     </TableHead>
                     <TableHead className="sticky top-0 z-10 h-10 w-[112px] border-b border-border bg-surface-2 px-3 text-xs font-medium text-muted-foreground">
                       Restrição
@@ -579,6 +596,7 @@ export default async function RentersPage({
         <RenterPanel
           renter={aberta}
           rental={locação}
+          charges={emAberto}
           vehicles={motos}
           closeHref={href(filters, { open: undefined })}
         />

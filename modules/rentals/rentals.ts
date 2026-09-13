@@ -52,6 +52,16 @@ export type Rental = {
    */
   vehicle: { plate: string; brand: string; model: string };
   renterName: string;
+  /**
+   * O que esta locação deve hoje, somado pela view.
+   *
+   * Não é situação da locação — o `CONTEXT.md` é explícito que ativa e
+   * inadimplente convivem. Zero e `null` são "em dia"; `delinquency()` traduz
+   * o par em dias de atraso e valor.
+   */
+  overdueAmount: number;
+  /** O vencimento da cobrança em aberto mais antiga, ou `null`. */
+  overdueSince: string | null;
 };
 
 /**
@@ -85,6 +95,8 @@ type RentalRow = {
   brand: string;
   model: string;
   renter_name: string;
+  overdue_amount: number | string;
+  overdue_since: string | null;
 };
 
 /**
@@ -123,6 +135,8 @@ function toRental(row: RentalRow): Rental {
     createdAt: row.created_at,
     vehicle: { plate: row.plate, brand: row.brand, model: row.model },
     renterName: row.renter_name,
+    overdueAmount: toAmount(row.overdue_amount) ?? 0,
+    overdueSince: row.overdue_since,
   };
 }
 
@@ -333,9 +347,15 @@ export const RENTALS_PER_PAGE = 20;
 /**
  * O recorte que os chips da tela oferecem.
  *
- * Duas, e não três: "Todas" é a ausência de recorte, como nas outras telas.
+ * "Todas" é a ausência de recorte, como nas outras telas.
+ *
+ * "Inadimplentes" está entre elas sendo de outra natureza: ativa e encerrada
+ * são fases da vida da locação, inadimplência não é fase nenhuma — uma locação
+ * pode estar ativa e devendo ao mesmo tempo. Continua sendo chip porque chip
+ * aqui é recorte, não estado: o gestor pergunta "me mostra quem deve", e a
+ * resposta cruza as duas outras.
  */
-export const RENTAL_SITUATIONS = ["active", "ended"] as const;
+export const RENTAL_SITUATIONS = ["active", "ended", "overdue"] as const;
 
 export type RentalSituation = (typeof RENTAL_SITUATIONS)[number];
 
@@ -368,6 +388,10 @@ const SORTS = {
   weeklyPrice: { column: "weekly_price" },
   startedOn: { column: "started_on" },
   commitment: { column: "commitment_months" },
+  // Ordena por *desde quando* se deve, que é a ordem de quem cobra: a mais
+  // antiga em aberto primeiro. O chip diz quem deve, a coluna diz há quanto
+  // tempo — perguntas diferentes.
+  finance: { column: "overdue_since" },
 } as const satisfies Record<string, { column: string }>;
 
 /** As chaves de ordenação, para quem precisa validar o que veio da URL. */
@@ -416,6 +440,7 @@ type Filterable = {
   or: (filter: string) => Filterable;
   is: (column: string, value: null) => Filterable;
   not: (column: string, operator: string, value: null) => Filterable;
+  gt: (column: string, value: number) => Filterable;
 };
 
 function filtered<T extends Filterable>(
@@ -435,6 +460,10 @@ function filtered<T extends Filterable>(
     if (filters.situation === "ended") {
       atual = atual.not("ended_on", "is", null);
     }
+    // Quem tem cobrança vencida e não paga. A soma já veio da view: fora do
+    // banco, excluir os adimplentes depois de paginar faria a paginação
+    // mentir sobre quantos são.
+    if (filters.situation === "overdue") atual = atual.gt("overdue_amount", 0);
   }
 
   return atual as T;
@@ -509,7 +538,9 @@ export async function listRentals(
  * pergunta já respondida.
  *
  * `activeWeeklyPrice` é a receita **contratada**, não a recebida: é a soma do
- * que foi acordado, e quem paga ou não paga é assunto de cobrança.
+ * que foi acordado. Quem paga e quem não paga são os outros dois números:
+ * `overdue` conta as locações com cobrança vencida em aberto, e
+ * `overdueAmount` soma o que elas devem.
  *
  * ponytail: soma no aplicativo sobre uma leitura das locações da locadora,
  * como em `fleetSummary`. Vira view agregada quando uma locadora passar de
@@ -519,14 +550,18 @@ export type RentalCounts = {
   all: number;
   active: number;
   ended: number;
+  overdue: number;
   activeWeeklyPrice: number;
+  overdueAmount: number;
 };
 
 export async function rentalCounts(
   client: SupabaseClient,
   filters: RentalFilters = {},
 ): Promise<RentalCounts> {
-  const query = client.from(READ).select("ended_on, weekly_price");
+  const query = client
+    .from(READ)
+    .select("ended_on, weekly_price, overdue_amount");
 
   const { data, error } = await filtered(query, filters, {
     skipSituation: true,
@@ -534,12 +569,17 @@ export async function rentalCounts(
 
   if (error) throw error;
 
-  const rows = data as Pick<RentalRow, "ended_on" | "weekly_price">[];
+  const rows = data as Pick<
+    RentalRow,
+    "ended_on" | "weekly_price" | "overdue_amount"
+  >[];
   const counts: RentalCounts = {
     all: rows.length,
     active: 0,
     ended: 0,
+    overdue: 0,
     activeWeeklyPrice: 0,
+    overdueAmount: 0,
   };
 
   for (const row of rows) {
@@ -548,6 +588,13 @@ export async function rentalCounts(
       counts.activeWeeklyPrice += toAmount(row.weekly_price) ?? 0;
     } else {
       counts.ended += 1;
+    }
+
+    // Encerrada também conta: quem devolveu a moto devendo continua devendo.
+    const devendo = toAmount(row.overdue_amount) ?? 0;
+    if (devendo > 0) {
+      counts.overdue += 1;
+      counts.overdueAmount += devendo;
     }
   }
 
