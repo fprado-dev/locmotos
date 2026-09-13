@@ -20,6 +20,8 @@ import {
   VEHICLE_SORTS,
   VEHICLES_PER_PAGE,
 } from "./index";
+import { openRental } from "@/modules/rentals";
+import { createRenter } from "@/modules/renters";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -793,7 +795,17 @@ describe("os números da frota", () => {
       ...cg160,
       plate: "SUM0A05",
     });
-    await setVehicleStatus(manager.client, reservada.id, "reserved");
+    // "Reservada" não se digita: quem reserva a moto é a locação, e o
+    // contador tem que enxergar a situação derivada como enxerga as outras.
+    const locatária = await createRenter(manager.client, {
+      name: "Ana Ribeiro",
+      cpf: "52998224725",
+    });
+    await openRental(manager.client, {
+      renterId: locatária.id,
+      vehicleId: reservada.id,
+      weeklyPrice: 500,
+    });
     await setVehicleStatus(manager.client, manutenção.id, "maintenance");
     await setVehicleStatus(manager.client, indisponível.id, "unavailable");
 

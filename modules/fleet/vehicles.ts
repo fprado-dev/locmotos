@@ -5,8 +5,10 @@ import { UserError } from "@/lib/user-error";
 /**
  * Em que situação um veículo está.
  *
- * Nesta fatia quem define é o gestor. Quando existir o módulo de Locações,
- * `reserved` passa a ser derivado de locação ativa.
+ * `reserved` não é mais escolha de ninguém: significa "tem locação ativa", e é
+ * derivado na leitura, pela view `fleet`. As outras três continuam do gestor —
+ * manutenção e indisponibilidade são decisões dele, não consequência de
+ * locação.
  */
 export const VEHICLE_STATUSES = [
   "available",
@@ -16,6 +18,17 @@ export const VEHICLE_STATUSES = [
 ] as const;
 
 export type VehicleStatus = (typeof VEHICLE_STATUSES)[number];
+
+/**
+ * As situações que o gestor pode escolher à mão.
+ *
+ * `reserved` fica de fora porque quem a define é a locação, não o select: a
+ * moto entra em reservada ao abrir uma locação e sai ao encerrá-la. Os selects
+ * da tela oferecem esta lista e dizem por que a quarta não está lá.
+ */
+export const MANAGER_VEHICLE_STATUSES = VEHICLE_STATUSES.filter(
+  (status) => status !== "reserved",
+) as readonly Exclude<VehicleStatus, "reserved">[];
 
 /** Os três anexos que um veículo tem: a foto e os dois documentos. */
 export const VEHICLE_FILE_KINDS = ["photo", "crlv", "crv"] as const;
@@ -33,6 +46,23 @@ const FILES_BUCKET = "vehicle-files";
  * igual em locadoras diferentes — o que o banco permite de propósito.
  */
 const COLUMNS = "*, tenants(name)";
+
+/**
+ * De onde se lê a frota, e onde se escreve nela.
+ *
+ * A leitura passa pela view `fleet`, que é a tabela com a situação já
+ * derivada: moto com locação ativa lê `reserved` venha o que vier na coluna.
+ * Filtrar, ordenar, paginar e contar por situação só é honesto assim — fora do
+ * banco, "disponíveis" teria que excluir as alugadas em cada consulta, e a
+ * ordenação por situação continuaria mentindo.
+ *
+ * A escrita continua na tabela: view com junção não é atualizável, e não
+ * deveria ser. O que volta de um insert ou update é a linha da tabela, com a
+ * situação guardada e não a derivada — por isso nenhuma escrita daqui devolve
+ * veículo para a tela desenhar; quem desenha lê de novo.
+ */
+const READ = "fleet";
+const WRITE = "vehicles";
 
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
@@ -151,7 +181,23 @@ function toVehicle(row: VehicleRow): Vehicle {
   };
 }
 
+/**
+ * Por que "Reservada" não se escolhe.
+ *
+ * Uma frase só, para a recusa ser a mesma no cadastro, na correção e no lote —
+ * é a mesma regra, e três redações dela acabariam divergindo.
+ */
+const RESERVED_IS_DERIVED =
+  "Reservada é consequência de locação ativa: abra uma locação para a moto ficar reservada.";
+
 function toRow(vehicle: NewVehicle) {
+  // A situação derivada não entra por escrita nenhuma. Sem esta guarda, um
+  // POST fabricado gravaria `reserved` na coluna de uma moto sem locação, e a
+  // frota passaria a mostrar reservada uma moto que ninguém alugou.
+  if (vehicle.status === "reserved") {
+    throw new UserError(RESERVED_IS_DERIVED, "status");
+  }
+
   return {
     // A placa é a mesma escrita em qualquer caixa. Normalizar aqui mantém a
     // lista legível; a unicidade em si quem garante é o índice no banco.
@@ -212,7 +258,7 @@ export async function createVehicle(
   const row = toRow(vehicle);
 
   const { data, error } = await client
-    .from("vehicles")
+    .from(WRITE)
     .insert(row)
     .select(COLUMNS)
     .single();
@@ -362,10 +408,7 @@ export async function listVehicles(
     // Veículo com baixa não está mais na frota. O filtro vive aqui, e não numa
     // policy, porque a policy de update precisa continuar alcançando a linha
     // para dar a baixa.
-    let query = client
-      .from("vehicles")
-      .select(COLUMNS, count)
-      .is("deleted_at", null);
+    let query = client.from(READ).select(COLUMNS, count).is("deleted_at", null);
 
     for (const { op, column, value } of conditions(filters)) {
       query =
@@ -449,7 +492,7 @@ export async function fleetSummary(
   today = new Date(),
 ): Promise<FleetSummary> {
   const { data, error } = await client
-    .from("vehicles")
+    .from(READ)
     .select("status, licensing_due_date, weekly_price")
     .is("deleted_at", null);
 
@@ -508,7 +551,7 @@ export async function fleetFilterOptions(
   client: SupabaseClient,
 ): Promise<FleetFilterOptions> {
   const { data, error } = await client
-    .from("vehicles")
+    .from(READ)
     .select("brand, model, year")
     .is("deleted_at", null);
 
@@ -533,6 +576,56 @@ export async function fleetFilterOptions(
   };
 }
 
+/** Uma moto como o seletor de abertura de locação a mostra. */
+export type AvailableVehicle = {
+  id: string;
+  plate: string;
+  brand: string;
+  model: string;
+  /** O valor semanal da tabela, que a locação copia e passa a ter como seu. */
+  weeklyPrice: number | null;
+};
+
+/**
+ * As motos que estão livres para entrar numa locação agora.
+ *
+ * Vem inteira e sem paginar, ao contrário de `listVehicles`: é uma lista para
+ * escolher de dentro de um formulário, e um seletor que mostrasse as vinte
+ * primeiras esconderia motos disponíveis de quem tem frota grande.
+ *
+ * "Disponível" aqui já é a situação derivada — moto com locação ativa lê
+ * `reserved` e não aparece, sem ninguém precisar lembrar de excluí-la.
+ *
+ * ponytail: lista inteira da locadora numa consulta só. Vira busca paginada
+ * dentro do seletor quando uma frota passar de algumas centenas de motos
+ * disponíveis ao mesmo tempo.
+ */
+export async function availableVehicles(
+  client: SupabaseClient,
+): Promise<AvailableVehicle[]> {
+  const { data, error } = await client
+    .from(READ)
+    .select("id, plate, brand, model, weekly_price")
+    .eq("status", "available")
+    .is("deleted_at", null)
+    .order("plate", { ascending: true });
+
+  if (error) throw error;
+
+  return (
+    data as Pick<
+      VehicleRow,
+      "id" | "plate" | "brand" | "model" | "weekly_price"
+    >[]
+  ).map((row) => ({
+    id: row.id,
+    plate: row.plate,
+    brand: row.brand,
+    model: row.model,
+    weeklyPrice: toAmount(row.weekly_price),
+  }));
+}
+
 /**
  * Quantas motos cada chip de situação mostraria, com os outros filtros de pé.
  *
@@ -547,7 +640,7 @@ export async function fleetStatusCounts(
   client: SupabaseClient,
   filters: VehicleFilters = {},
 ): Promise<FleetStatusCounts> {
-  let query = client.from("vehicles").select("status").is("deleted_at", null);
+  let query = client.from(READ).select("status").is("deleted_at", null);
 
   for (const { op, column, value } of conditions(filters, {
     skipStatus: true,
@@ -587,7 +680,7 @@ export async function findVehicle(
   id: string,
 ): Promise<Vehicle | null> {
   const { data, error } = await client
-    .from("vehicles")
+    .from(READ)
     .select(COLUMNS)
     .eq("id", id)
     .is("deleted_at", null)
@@ -608,6 +701,12 @@ export async function findVehicle(
  *
  * Um update só para o lote inteiro, e não um por id: o lote é uma decisão do
  * gestor, e meia dúzia de updates soltos poderia deixar metade aplicada.
+ *
+ * Duas situações não se alteram daqui, e as duas pelo mesmo motivo — quem as
+ * decide é a locação, não o select: `reserved` não é um valor a escolher, e
+ * moto que já está reservada só volta a mudar de situação quando a locação
+ * dela for encerrada. Ela fica de fora do lote em vez de derrubá-lo inteiro, e
+ * quem chamou conta ao gestor o que de fato mudou.
  */
 export async function setVehiclesStatus(
   client: SupabaseClient,
@@ -616,10 +715,27 @@ export async function setVehiclesStatus(
 ): Promise<Vehicle[]> {
   if (ids.length === 0) return [];
 
-  const { data, error } = await client
-    .from("vehicles")
-    .update({ status })
+  if (status === "reserved") throw new UserError(RESERVED_IS_DERIVED, "status");
+
+  // A situação derivada vem da view; a alugada é a que sai do lote.
+  const { data: atuais, error: readError } = await client
+    .from(READ)
+    .select("id, status")
     .in("id", ids)
+    .is("deleted_at", null);
+
+  if (readError) throw readError;
+
+  const livres = (atuais as Pick<VehicleRow, "id" | "status">[])
+    .filter((row) => row.status !== "reserved")
+    .map((row) => row.id);
+
+  if (livres.length === 0) return [];
+
+  const { data, error } = await client
+    .from(WRITE)
+    .update({ status })
+    .in("id", livres)
     .is("deleted_at", null)
     .select(COLUMNS);
 
@@ -654,7 +770,7 @@ export async function updateVehicle(
   const row = toRow(vehicle);
 
   const { data, error } = await client
-    .from("vehicles")
+    .from(WRITE)
     .update(row)
     .eq("id", id)
     .is("deleted_at", null)
@@ -680,7 +796,7 @@ export async function removeVehicles(
   if (ids.length === 0) return [];
 
   const { data, error } = await client
-    .from("vehicles")
+    .from(WRITE)
     .update({ deleted_at: new Date().toISOString() })
     .in("id", ids)
     .is("deleted_at", null)
@@ -743,7 +859,7 @@ export async function attachVehicleFile(
   if (uploadError) throw uploadError;
 
   const { data, error } = await client
-    .from("vehicles")
+    .from(WRITE)
     .update({ [FILE_COLUMNS[kind]]: path })
     .eq("id", id)
     .is("deleted_at", null)

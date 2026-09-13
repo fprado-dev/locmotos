@@ -15,7 +15,16 @@ module.exports = {
       from: { path: "^modules/([^/]+)/" },
       to: {
         path: "^modules/([^/]+)/.+",
-        pathNot: "^modules/$1/",
+        pathNot: [
+          // O próprio módulo, por dentro.
+          "^modules/$1/",
+          // O índice de outro módulo: é a porta da frente, e é exatamente o
+          // que esta regra existe para obrigar. Locações precisa perguntar a
+          // Locatários se a pessoa está restrita, e a pergunta passa por aqui
+          // — o que continua proibido é entrar pelas entranhas. Ciclo entre
+          // módulos quem barra é `no-circular`, abaixo.
+          "^modules/[^/]+/index\\.ts$",
+        ],
       },
     },
     {

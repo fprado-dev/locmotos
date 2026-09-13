@@ -3,9 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { managerLabel } from "@/app/ui";
-import { optionalField, requiredField } from "@/lib/form";
+import {
+  MAX_AMOUNT,
+  optionalField,
+  optionalNumber,
+  requiredField,
+} from "@/lib/form";
 import { createClient } from "@/lib/supabase/server";
 import { UserError } from "@/lib/user-error";
+import { openRental } from "@/modules/rentals";
 import {
   createRenter,
   formatCpf,
@@ -33,8 +39,14 @@ export type FormState = {
   created?: { id: string; name: string };
 };
 
-/** O recado de um `UserError`, com o campo que ele acusa. */
-function userError(error: unknown): FormState | null {
+/**
+ * O recado de um `UserError`, com o campo que ele acusa.
+ *
+ * O tipo é só o recado, e não um `FormState` inteiro, porque as ações desta
+ * tela devolvem estados diferentes — o cadastro tem `created` com nome, a
+ * locação com placa — e todos cabem num erro sem `created`.
+ */
+function userError(error: unknown): { error: string; field?: string } | null {
   return error instanceof UserError
     ? { error: error.message, field: error.field }
     : null;
@@ -111,6 +123,73 @@ export async function editRenter(
   revalidatePath("/renters");
   // Salvou: a tela volta sem o painel aberto, com a lista já atualizada.
   redirect("/renters");
+}
+
+/**
+ * O que a abertura de locação tem a contar.
+ *
+ * `created` traz a placa porque é o que o aviso de sucesso diz — "Ana está com
+ * a ABC1D23" é a frase que o gestor confere contra a moto que ele acabou de
+ * entregar. O nome quem já tem é a tela que abriu o painel.
+ */
+export type RentalFormState = {
+  error?: string;
+  field?: string;
+  created?: { id: string; plate: string };
+};
+
+/**
+ * Abre uma locação para um locatário.
+ *
+ * O quanto é validado aqui é pouco de propósito: faixa e formato do que veio
+ * do formulário, e nada mais. Quem recusa locatário restrito, moto que não
+ * está disponível e segunda locação na mesma moto é o módulo — e, no caso da
+ * segunda locação, o índice único do banco atrás dele.
+ */
+export async function openNewRental(
+  _state: RentalFormState,
+  formData: FormData,
+): Promise<RentalFormState> {
+  let nova: { id: string; plate: string };
+
+  try {
+    const client = await createClient();
+
+    const rental = await openRental(client, {
+      renterId: requiredField(formData, "renterId", "Locatário"),
+      vehicleId: requiredField(formData, "vehicleId", "Moto"),
+      // Ausente vira 0 e o módulo recusa com a frase dele: o valor semanal é
+      // obrigatório, e a regra mora num lugar só.
+      weeklyPrice:
+        optionalNumber(formData, "weeklyPrice", "Valor semanal", {
+          max: MAX_AMOUNT,
+        }) ?? 0,
+      startedOn: optionalField(formData, "startedOn"),
+      // Dezenove anos de fidelidade não é fidelidade, é erro de digitação — e
+      // `smallint` estoura no banco antes de virar recado.
+      commitmentMonths: optionalNumber(
+        formData,
+        "commitmentMonths",
+        "Fidelidade",
+        { max: 240, integer: true },
+      ),
+      deposit: optionalNumber(formData, "deposit", "Caução", {
+        max: MAX_AMOUNT,
+      }),
+    });
+
+    nova = { id: rental.id, plate: rental.vehicle?.plate ?? "moto" };
+  } catch (error) {
+    const recado = userError(error);
+    if (recado) return recado;
+
+    console.error("Falha ao abrir locação", error);
+    return { error: "Não foi possível abrir a locação. Tente de novo." };
+  }
+
+  revalidatePath("/renters");
+  revalidatePath("/fleet");
+  return { created: nova };
 }
 
 /**

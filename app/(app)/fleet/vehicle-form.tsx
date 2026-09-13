@@ -17,18 +17,14 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import {
-  VEHICLE_STATUSES,
-  type Vehicle,
-  type VehicleStatus,
-} from "@/modules/fleet";
+import { type Vehicle, type VehicleStatus } from "@/modules/fleet";
 import { addVehicle, editVehicle, type FormState } from "./actions";
+import { StatusOptions } from "./status-options";
 
 /** Onde o recado do formulário mora, para os campos poderem apontar para ele. */
 const FORM_ERROR_ID = "vehicle-form-error";
@@ -261,11 +257,7 @@ export function VehicleForm({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {VEHICLE_STATUSES.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {STATUS_LABELS[status]}
-                    </SelectItem>
-                  ))}
+                  <StatusOptions />
                 </SelectContent>
               </Select>
             </div>

@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { availableVehicles } from "@/modules/fleet";
+import { activeRentalForRenter } from "@/modules/rentals";
 import {
   DEFAULT_RENTER_SORT,
   listRenters,
@@ -42,13 +44,16 @@ import { LiveSearch } from "../live-search";
 import { RowCheckbox, SelectAll, Selection, Toolbar } from "../selection";
 import { Pagination, SortHeader } from "../sort-header";
 import { BatchBar } from "./batch-bar";
+import { CnhBadge } from "./cnh-badge";
 import { NewRenterSheet } from "./new-renter-sheet";
-import { CnhBadge, RenterPanel } from "./renter-panel";
+import { RenterPanel } from "./renter-panel";
 
 type Param = string | string[] | undefined;
 
 /** O nome de cada recorte na tela. Vocabulário de interface, num lugar só. */
 const SITUATION_LABELS: Record<RenterSituation, string> = {
+  "with-rental": "Com locação",
+  "without-rental": "Sem locação",
   restricted: "Com restrição",
   "cnh-overdue": "CNH vencida",
   "cnh-due-soon": "CNH vencendo",
@@ -265,6 +270,14 @@ function RenterRow({
       </TableCell>
 
       <TableCell className={CELL}>
+        {renter.rental?.plate ? (
+          <span className="font-mono text-[12.5px]">{renter.rental.plate}</span>
+        ) : (
+          <span className="text-subtle">—</span>
+        )}
+      </TableCell>
+
+      <TableCell className={CELL}>
         {renter.restriction ? (
           <Badge
             title={renter.restriction.reason}
@@ -306,7 +319,7 @@ export default async function RentersPage({
   const filtering = Boolean(filters.q || filters.situation);
 
   const client = await createClient();
-  const [{ renters, hasMore, total }, cards, tenant, aberta] =
+  const [{ renters, hasMore, total }, cards, tenant, aberta, locação, motos] =
     await Promise.all([
       listRenters(client, filters),
       // Sem filtro: os cards são da carteira inteira, e não podem mudar porque
@@ -316,6 +329,10 @@ export default async function RentersPage({
       // A pessoa aberta no painel pode não estar nesta página — o link veio de
       // outro filtro, ou de um endereço colado.
       aberto ? findRenter(client, aberto) : null,
+      // O acordo inteiro é do módulo de Locações; a lista só carrega a placa.
+      aberto ? activeRentalForRenter(client, aberto) : null,
+      // As motos do seletor de nova locação: só custam quando o painel abre.
+      aberto ? availableVehicles(client) : [],
     ]);
 
   // O contador do chip responde "quantos sobrariam se eu clicasse aqui": a
@@ -367,15 +384,21 @@ export default async function RentersPage({
 
       <div className="flex min-h-0 flex-1 flex-col px-8 pb-6">
         {/*
-          Três cards, e não os quatro do desenho: "Com locação ativa" e
-          "Inadimplentes" leem o módulo de Locações, que ainda não existe. Um
-          número inventado no topo da tela seria pior que um card a menos.
+          Quatro cards, e não os cinco que a tela vai ter: "Inadimplentes" lê
+          cobrança, que ainda não existe. Um número inventado no topo da tela
+          seria pior que um card a menos.
         */}
-        <section className="mt-1 mb-4 grid shrink-0 grid-cols-3 gap-3">
+        <section className="mt-1 mb-4 grid shrink-0 grid-cols-4 gap-3">
           <SummaryCard
             label="Total de locatários"
             value={formatInteger(cards.all)}
             note={`${renters.length} nesta página`}
+          />
+          <SummaryCard
+            label="Com locação ativa"
+            dot="var(--ok)"
+            value={formatInteger(cards["with-rental"])}
+            note={`${formatInteger(cards["without-rental"])} sem locação`}
           />
           <SummaryCard
             label="Com restrição"
@@ -465,7 +488,7 @@ export default async function RentersPage({
             ) : (
               <Table
                 containerClassName="min-h-0 flex-1 overflow-auto"
-                className="min-w-[980px] table-fixed border-separate border-spacing-0 text-[13px]"
+                className="min-w-[1100px] table-fixed border-separate border-spacing-0 text-[13px]"
               >
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -497,6 +520,9 @@ export default async function RentersPage({
                       href={sortHref}
                       className="w-[190px]"
                     />
+                    <TableHead className="sticky top-0 z-10 h-10 w-[118px] border-b border-border bg-surface-2 px-3 text-xs font-medium text-muted-foreground">
+                      Locação atual
+                    </TableHead>
                     <TableHead className="sticky top-0 z-10 h-10 w-[112px] border-b border-border bg-surface-2 px-3 text-xs font-medium text-muted-foreground">
                       Restrição
                     </TableHead>
@@ -543,6 +569,8 @@ export default async function RentersPage({
       {aberta && (
         <RenterPanel
           renter={aberta}
+          rental={locação}
+          vehicles={motos}
           closeHref={href(filters, { open: undefined })}
         />
       )}

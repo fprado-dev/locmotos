@@ -1,5 +1,6 @@
 export {
   attachVehicleFile,
+  availableVehicles,
   createVehicle,
   daysUntilLicensing,
   daysWithoutRental,
@@ -12,6 +13,7 @@ export {
   LICENSING_WARNING_DAYS,
   listVehicles,
   LONG_STOP_DAYS,
+  MANAGER_VEHICLE_STATUSES,
   removeVehicle,
   removeVehicles,
   setVehicleStatus,
@@ -22,6 +24,7 @@ export {
   VEHICLE_SORTS,
   VEHICLE_STATUSES,
   VEHICLES_PER_PAGE,
+  type AvailableVehicle,
   type FleetFilterOptions,
   type FleetStatusCounts,
   type FleetSummary,
