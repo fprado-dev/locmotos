@@ -12,8 +12,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import type { Charge, Rental } from "@/modules/rentals";
-import { OverdueCharges } from "../finance";
+import type { Charge, Payment, Rental } from "@/modules/rentals";
+import { OverdueCharges, RegisteredPayments } from "../charges-block";
 
 /** Um título de seção do painel. */
 function Section({
@@ -63,11 +63,14 @@ function Datum({
 export function RentalPanel({
   rental,
   charges,
+  payments,
   closeHref,
 }: {
   rental: Rental;
-  /** As cobranças vencidas e não pagas, já lidas pela tela. */
+  /** As cobranças vencidas e em aberto, já lidas pela tela. */
   charges: Charge[];
+  /** Os pagamentos já lançados, para desfazer o que entrou errado. */
+  payments: Payment[];
   closeHref: string;
 }) {
   const router = useRouter();
@@ -166,6 +169,8 @@ export function RentalPanel({
           </Section>
 
           <OverdueCharges charges={charges} />
+
+          <RegisteredPayments payments={payments} />
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">

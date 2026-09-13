@@ -2,8 +2,12 @@ export {
   delinquency,
   generateCharges,
   overdueCharges,
+  payCharge,
+  rentalPayments,
+  reversePayment,
   type Charge,
   type Delinquency,
+  type Payment,
 } from "./charges";
 export {
   activeRentalForRenter,

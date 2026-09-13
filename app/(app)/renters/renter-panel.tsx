@@ -14,8 +14,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { AvailableVehicle } from "@/modules/fleet";
-import type { Charge, Rental } from "@/modules/rentals";
-import { FinanceCell, OverdueCharges } from "../finance";
+import type { Charge, Payment, Rental } from "@/modules/rentals";
+import { OverdueCharges, RegisteredPayments } from "../charges-block";
+import { FinanceCell } from "../finance";
 import { formatCpf, formatWhatsapp, type Renter } from "@/modules/renters";
 import { liftRenterRestriction } from "./actions";
 import { CnhBadge } from "./cnh-badge";
@@ -71,14 +72,17 @@ export function RenterPanel({
   renter,
   rental,
   charges,
+  payments,
   vehicles,
   closeHref,
 }: {
   renter: Renter;
   /** A locação ativa, quando há uma. */
   rental: Rental | null;
-  /** As cobranças vencidas e não pagas dessa locação. */
+  /** As cobranças vencidas e em aberto dessa locação. */
   charges: Charge[];
+  /** Os pagamentos já lançados, para desfazer o que entrou errado. */
+  payments: Payment[];
   /** As motos livres para uma locação nova. */
   vehicles: AvailableVehicle[];
   closeHref: string;
@@ -264,6 +268,8 @@ export function RenterPanel({
               </Section>
 
               <OverdueCharges charges={charges} />
+
+              <RegisteredPayments payments={payments} />
             </div>
 
             <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">
