@@ -1,5 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { daysUntil, isoDay } from "@/lib/calendar";
+import { UserError } from "@/lib/user-error";
 
 /**
  * O valor que o locatário deve por um ciclo — a semana de cobrança.
@@ -17,8 +18,6 @@ export type Charge = {
   cycleEnd: string;
   dueOn: string;
   amount: number;
-  /** Nulo é cobrança em aberto. Quem preenche é o registro de pagamento. */
-  paidOn: string | null;
 };
 
 /** A linha como o Postgres a devolve. Não sai do módulo. */
@@ -29,7 +28,6 @@ type ChargeRow = {
   cycle_end: string;
   due_on: string;
   amount: number | string;
-  paid_on: string | null;
 };
 
 function toCharge(row: ChargeRow): Charge {
@@ -40,7 +38,6 @@ function toCharge(row: ChargeRow): Charge {
     cycleEnd: row.cycle_end,
     dueOn: row.due_on,
     amount: Number(row.amount),
-    paidOn: row.paid_on,
   };
 }
 
@@ -85,13 +82,18 @@ export function delinquency(
 }
 
 /**
- * As cobranças vencidas e não pagas de uma locação, da mais antiga para a mais
- * nova.
+ * As cobranças vencidas e ainda em aberto de uma locação, da mais antiga para
+ * a mais nova.
  *
  * É o bloco "Cobranças em aberto" dos painéis: uma linha por ciclo vencido,
  * com o período, o vencimento e o quanto. O corte de "vencido" vira data aqui
  * e não em SQL, como o da CNH e o do licenciamento — e por isso um teste
  * consegue fixá-lo passando o `today`.
+ *
+ * "Em aberto" é a **ausência** de pagamento em pé, não uma coluna: o embed
+ * vem recortado por `reversed_at is null` e a linha só passa quando ele volta
+ * vazio. Desfazer um pagamento devolve a cobrança a esta lista sem ninguém
+ * corrigir estado nenhum.
  */
 export async function overdueCharges(
   client: SupabaseClient,
@@ -100,14 +102,195 @@ export async function overdueCharges(
 ): Promise<Charge[]> {
   const { data, error } = await client
     .from("charges")
-    .select("*")
+    .select("*, payments!left(id)")
     .eq("rental_id", rentalId)
-    .is("paid_on", null)
+    .is("payments.reversed_at", null)
+    .is("payments", null)
     .lt("due_on", isoDay(today))
     .order("due_on", { ascending: true });
 
   if (error) throw error;
   return (data as ChargeRow[]).map(toCharge);
+}
+
+/**
+ * O registro de que uma cobrança foi quitada.
+ *
+ * Guarda **quando** o dinheiro entrou e **quem** registrou, como a restrição
+ * guarda motivo e responsável: é o mesmo tipo de fato, e vai ser perguntado do
+ * mesmo jeito seis meses depois.
+ */
+export type Payment = {
+  id: string;
+  chargeId: string;
+  /** Quando o dinheiro entrou, que não é quando o gestor digitou. */
+  receivedOn: string;
+  /** Quem registrou, como estava escrito na hora. */
+  by: string;
+  at: string;
+  /** O ciclo que ele quitou — é assim que a tela nomeia o pagamento. */
+  cycle: { start: string; end: string; amount: number };
+};
+
+type PaymentRow = {
+  id: string;
+  charge_id: string;
+  received_on: string;
+  created_by_name: string;
+  created_at: string;
+  charges: {
+    cycle_start: string;
+    cycle_end: string;
+    amount: number | string;
+  } | null;
+};
+
+/** As colunas de uma leitura de pagamento: o registro e o ciclo que ele quita. */
+const PAYMENT_COLUMNS =
+  "id, charge_id, received_on, created_by_name, created_at, " +
+  "charges!inner(cycle_start, cycle_end, amount)";
+
+function toPayment(row: PaymentRow): Payment {
+  return {
+    id: row.id,
+    chargeId: row.charge_id,
+    receivedOn: row.received_on,
+    by: row.created_by_name,
+    at: row.created_at,
+    cycle: {
+      // A junção é interna e o FK é `not null`: o ciclo de um pagamento existe.
+      start: row.charges!.cycle_start,
+      end: row.charges!.cycle_end,
+      amount: Number(row.charges!.amount),
+    },
+  };
+}
+
+/**
+ * Erro do Postgres virando recado para o gestor.
+ *
+ * O índice único parcial é o que de fato impede o segundo pagamento — a
+ * checagem lá em cima existe para o recado ser bom, não para ser a garantia.
+ */
+function toDomainError(error: PostgrestError): Error {
+  if (error.code === "23505") {
+    return new UserError("Esta cobrança já foi paga. Recarregue a tela.");
+  }
+
+  // FK composto: o id veio do browser e aponta para fora desta locadora.
+  if (error.code === "23503") {
+    return new UserError("Cobrança não encontrada.");
+  }
+
+  return error;
+}
+
+/**
+ * Registra que uma cobrança foi paga.
+ *
+ * O recebimento é datado pelo gestor, não pelo relógio: ele lança na segunda o
+ * que recebeu no sábado. O que não se aceita é data no futuro — dinheiro que
+ * ainda não entrou não é pagamento, é promessa.
+ *
+ * Pagamento parcial está fora de escopo por decisão da issue: uma cobrança é
+ * paga ou não é. O que fazer com a outra metade é regra que ninguém decidiu.
+ *
+ * A leitura de cima existe para o recado ser certo, e não para ser a garantia:
+ * sem ela, tentar pagar a cobrança de outra locadora esbarraria primeiro no
+ * índice único — que é global — e o recado diria "já foi paga", contando a
+ * quem não é dela que ela existe e que está quitada.
+ */
+export async function payCharge(
+  client: SupabaseClient,
+  chargeId: string,
+  { receivedOn, by }: { receivedOn?: string | null; by: string },
+  today = new Date(),
+): Promise<Payment> {
+  const hoje = isoDay(today);
+
+  if (receivedOn && receivedOn > hoje) {
+    throw new UserError(
+      "A data de recebimento não pode estar no futuro.",
+      "receivedOn",
+    );
+  }
+
+  const { data: cobrança, error: readError } = await client
+    .from("charges")
+    .select("id")
+    .eq("id", chargeId)
+    .maybeSingle();
+
+  if (readError) throw readError;
+  if (!cobrança) throw new UserError("Cobrança não encontrada.");
+
+  const { data, error } = await client
+    .from("payments")
+    .insert({
+      charge_id: chargeId,
+      // Ausente é hoje, e quem decide isso é o default da coluna — em dia de
+      // Brasília, como o resto das datas de cobrança.
+      ...(receivedOn ? { received_on: receivedOn } : {}),
+      created_by_name: by,
+    })
+    .select(PAYMENT_COLUMNS)
+    .single();
+
+  if (error) throw toDomainError(error);
+  return toPayment(data as unknown as PaymentRow);
+}
+
+/**
+ * Desfaz um pagamento lançado errado.
+ *
+ * `reversed_at` em vez de `delete`: ter registrado e ter desfeito são dois
+ * fatos, e o segundo não apaga o primeiro — é a mesma escolha que
+ * `lifted_at` faz com a restrição. A cobrança volta para "em aberto" sozinha,
+ * porque em aberto é a ausência de pagamento em pé e não um estado gravado.
+ *
+ * Devolve `null` quando não havia o que desfazer: pagamento de outra locadora,
+ * id inventado, ou um desfazimento que já tinha acontecido.
+ */
+export async function reversePayment(
+  client: SupabaseClient,
+  paymentId: string,
+  { by }: { by: string },
+): Promise<Payment | null> {
+  const { data, error } = await client
+    .from("payments")
+    .update({ reversed_at: new Date().toISOString(), reversed_by_name: by })
+    .eq("id", paymentId)
+    .is("reversed_at", null)
+    .select(PAYMENT_COLUMNS)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? toPayment(data as unknown as PaymentRow) : null;
+}
+
+/**
+ * Os pagamentos em pé de uma locação, do mais recente para o mais antigo.
+ *
+ * Existe para o desfazimento ter de onde partir: quitada a cobrança, ela sai
+ * de "Cobranças em aberto", e sem esta lista um lançamento errado não teria
+ * mais tela nenhuma. Os desfeitos não voltam — quem quiser a história inteira
+ * lê a tabela.
+ */
+export async function rentalPayments(
+  client: SupabaseClient,
+  rentalId: string,
+  limit = 5,
+): Promise<Payment[]> {
+  const { data, error } = await client
+    .from("payments")
+    .select(PAYMENT_COLUMNS)
+    .eq("charges.rental_id", rentalId)
+    .is("reversed_at", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data as unknown as PaymentRow[]).map(toPayment);
 }
 
 /**

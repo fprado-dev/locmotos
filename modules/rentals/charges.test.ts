@@ -13,8 +13,11 @@ import {
   generateCharges,
   listRentals,
   openRental,
+  payCharge,
   rentalCounts,
+  rentalPayments,
   overdueCharges,
+  reversePayment,
 } from "./index";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -149,10 +152,12 @@ describe("o corte de vencido", () => {
 });
 
 /** A locadora que os dois primeiros blocos dividem — cada login tem cota. */
-const compartilhado: { client: SupabaseClient; rentalId: string } = {
-  client: null!,
-  rentalId: "",
-};
+const compartilhado: {
+  client: SupabaseClient;
+  rentalId: string;
+  /** A locação aberta hoje: a cobrança dela é a única que fica em aberto. */
+  abertaHojeId: string;
+} = { client: null!, rentalId: "", abertaHojeId: "" };
 
 describe("ciclos e cobranças", () => {
   let gestor: SupabaseClient;
@@ -176,7 +181,7 @@ describe("ciclos e cobranças", () => {
 
     const { data } = await gestor
       .from("charges")
-      .select("cycle_start, cycle_end, due_on, amount, paid_on")
+      .select("cycle_start, cycle_end, due_on, amount")
       .eq("rental_id", locação.id)
       .order("cycle_start", { ascending: true });
 
@@ -186,28 +191,24 @@ describe("ciclos e cobranças", () => {
         cycle_end: diasAntes(hoje, 15),
         due_on: diasAntes(hoje, 15),
         amount: 300,
-        paid_on: null,
       },
       {
         cycle_start: diasAntes(hoje, 14),
         cycle_end: diasAntes(hoje, 8),
         due_on: diasAntes(hoje, 8),
         amount: 300,
-        paid_on: null,
       },
       {
         cycle_start: diasAntes(hoje, 7),
         cycle_end: diasAntes(hoje, 1),
         due_on: diasAntes(hoje, 1),
         amount: 300,
-        paid_on: null,
       },
       {
         cycle_start: hoje,
         cycle_end: diasAntes(hoje, -6),
         due_on: diasAntes(hoje, -6),
         amount: 300,
-        paid_on: null,
       },
     ]);
   });
@@ -246,28 +247,9 @@ describe("ciclos e cobranças", () => {
     expect(abertas.reduce((soma, charge) => soma + charge.amount, 0)).toBe(900);
   });
 
-  it("cobrança paga sai da conta", async () => {
-    const [primeira] = await overdueCharges(gestor, compartilhado.rentalId);
-    await gestor
-      .from("charges")
-      .update({ paid_on: hoje })
-      .eq("id", primeira.id);
-
-    const locação = await findRental(gestor, compartilhado.rentalId);
-    expect(locação).toMatchObject({
-      overdueAmount: 600,
-      overdueSince: diasAntes(hoje, 8),
-    });
-
-    // Devolve o cenário para os blocos seguintes.
-    await gestor
-      .from("charges")
-      .update({ paid_on: null })
-      .eq("id", primeira.id);
-  });
-
   it("locação aberta hoje não nasce devendo", async () => {
     const locação = await novaLocação(gestor, { cpf: "111.444.777-35" });
+    compartilhado.abertaHojeId = locação.id;
 
     expect(await generateCharges(gestor)).toBe(1);
 
@@ -291,8 +273,105 @@ describe("ciclos e cobranças", () => {
   });
 });
 
+const GESTOR = "Gestor · Locadora de teste";
+
+describe("registro de pagamento", () => {
+  let gestor: SupabaseClient;
+  let hoje: string;
+
+  beforeAll(async () => {
+    gestor = compartilhado.client;
+    hoje = await hojeNoBanco(gestor);
+  });
+
+  it("a cobrança paga sai da conta, com quem registrou junto", async () => {
+    const [primeira] = await overdueCharges(gestor, compartilhado.rentalId);
+
+    const pagamento = await payCharge(gestor, primeira.id, {
+      receivedOn: diasAntes(hoje, 2),
+      by: GESTOR,
+    });
+
+    expect(pagamento).toMatchObject({
+      chargeId: primeira.id,
+      receivedOn: diasAntes(hoje, 2),
+      by: GESTOR,
+      cycle: { start: diasAntes(hoje, 21), amount: 300 },
+    });
+
+    expect(await findRental(gestor, compartilhado.rentalId)).toMatchObject({
+      overdueAmount: 600,
+      overdueSince: diasAntes(hoje, 8),
+    });
+  });
+
+  it("pagar duas vezes a mesma cobrança é recusado", async () => {
+    const [pagamento] = await rentalPayments(gestor, compartilhado.rentalId);
+
+    await expect(
+      payCharge(gestor, pagamento.chargeId, { by: GESTOR }),
+    ).rejects.toThrow(/já foi paga/);
+  });
+
+  it("recebimento no futuro não é pagamento", async () => {
+    const [aberta] = await overdueCharges(gestor, compartilhado.rentalId);
+
+    await expect(
+      payCharge(gestor, aberta.id, {
+        receivedOn: diasAntes(hoje, -1),
+        by: GESTOR,
+      }),
+    ).rejects.toThrow(/futuro/);
+  });
+
+  it("desfazer devolve a cobrança para o vermelho, e fica registrado", async () => {
+    const [pagamento] = await rentalPayments(gestor, compartilhado.rentalId);
+
+    expect(
+      await reversePayment(gestor, pagamento.id, { by: GESTOR }),
+    ).toMatchObject({ id: pagamento.id });
+
+    // A linha continua lá; o que mudou é que ela não está mais de pé.
+    const { data } = await gestor
+      .from("payments")
+      .select("id, reversed_by_name")
+      .eq("id", pagamento.id);
+    expect(data).toEqual([{ id: pagamento.id, reversed_by_name: GESTOR }]);
+
+    expect(await rentalPayments(gestor, compartilhado.rentalId)).toEqual([]);
+    expect(await findRental(gestor, compartilhado.rentalId)).toMatchObject({
+      overdueAmount: 900,
+      overdueSince: diasAntes(hoje, 15),
+    });
+
+    // E a cobrança pode ser paga de novo, que é o ponto de desfazer.
+    expect(
+      await reversePayment(gestor, pagamento.id, { by: GESTOR }),
+    ).toBeNull();
+  });
+
+  it("pagar tudo o que venceu tira a locação do vermelho", async () => {
+    for (const charge of await overdueCharges(gestor, compartilhado.rentalId)) {
+      await payCharge(gestor, charge.id, { by: GESTOR });
+    }
+
+    const locação = await findRental(gestor, compartilhado.rentalId);
+    expect(locação).toMatchObject({ overdueAmount: 0, overdueSince: null });
+    expect(delinquency(locação!)).toBeNull();
+
+    // E some do chip e do card, na mesma volta.
+    expect(await listRentals(gestor, { situation: "overdue" })).toMatchObject({
+      total: 0,
+    });
+    expect(await rentalCounts(gestor)).toMatchObject({
+      overdue: 0,
+      overdueAmount: 0,
+    });
+  });
+});
+
 describe("isolamento entre locadoras", () => {
-  it("cobrança de outra locadora não é lida", async () => {
+  it("cobrança e pagamento de outra locadora não são lidos nem escritos", async () => {
     const outra = await createManager();
 
     // O gerador roda como quem chamou: a RLS o prende à locadora dele, então
@@ -304,5 +383,33 @@ describe("isolamento entre locadoras", () => {
 
     expect(await overdueCharges(outra, compartilhado.rentalId)).toEqual([]);
     expect(await findRental(outra, compartilhado.rentalId)).toBeNull();
+
+    // Cobrança da vizinha não é paga, e o recado não conta nada sobre ela: a
+    // RLS a esconde da leitura, e o FK composto recusaria o insert de todo
+    // jeito. A cobrança escolhida está em aberto de propósito — a recusa tem
+    // que ser "não encontrada", nunca "já foi paga".
+    const { data: emAberto } = await compartilhado.client
+      .from("charges")
+      .select("id")
+      .eq("rental_id", compartilhado.abertaHojeId)
+      .single();
+
+    await expect(
+      payCharge(outra, (emAberto as { id: string }).id, {
+        by: "Gestor · Vizinha",
+      }),
+    ).rejects.toThrow(/não encontrada/i);
+
+    // E o pagamento da vizinha não é desfeito por quem não é dela.
+    const [pagamento] = await rentalPayments(
+      compartilhado.client,
+      compartilhado.rentalId,
+    );
+    expect(
+      await reversePayment(outra, pagamento.id, { by: "Gestor · Vizinha" }),
+    ).toBeNull();
+    expect(await outra.from("payments").select("id")).toMatchObject({
+      data: [],
+    });
   });
 });

@@ -80,7 +80,7 @@ _Código_: `Charge`
 _Evitar_: parcela, fatura, boleto, mensalidade, título
 
 **Pagamento**:
-Registro de que uma cobrança foi quitada. Na v1 é o gestor quem registra, na mão.
+Registro de que uma cobrança foi quitada. Na v1 é o gestor quem registra, na mão, com a data em que o dinheiro entrou — que não é a data em que ele digitou — e quem registrou. Uma cobrança é paga por inteiro, e só uma vez. Desfazer um lançamento errado registra o desfazimento; não apaga a linha. "Em aberto" é a ausência de pagamento em pé, não uma coluna.
 _Código_: `Payment`
 _Evitar_: baixa, quitação, recebimento
 

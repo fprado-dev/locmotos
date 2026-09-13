@@ -21,7 +21,11 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { availableVehicles } from "@/modules/fleet";
-import { activeRentalForRenter, overdueCharges } from "@/modules/rentals";
+import {
+  activeRentalForRenter,
+  overdueCharges,
+  rentalPayments,
+} from "@/modules/rentals";
 import {
   DEFAULT_RENTER_SORT,
   listRenters,
@@ -351,7 +355,12 @@ export default async function RentersPage({
 
   // As cobranças em aberto dependem de qual é a locação, então vêm depois
   // dela — e só quando o painel está aberto, que é quando alguém as lê.
-  const emAberto = locação ? await overdueCharges(client, locação.id) : [];
+  const [emAberto, pagos] = locação
+    ? await Promise.all([
+        overdueCharges(client, locação.id),
+        rentalPayments(client, locação.id),
+      ])
+    : [[], []];
 
   // O contador do chip responde "quantos sobrariam se eu clicasse aqui": a
   // busca mexe nos números, e sem busca é a mesma conta dos cards.
@@ -597,6 +606,7 @@ export default async function RentersPage({
           renter={aberta}
           rental={locação}
           charges={emAberto}
+          payments={pagos}
           vehicles={motos}
           closeHref={href(filters, { open: undefined })}
         />

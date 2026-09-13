@@ -19,6 +19,7 @@ import {
   findRental,
   listRentals,
   overdueCharges,
+  rentalPayments,
   rentalCounts,
   RENTAL_SITUATIONS,
   RENTAL_SORTS,
@@ -280,7 +281,7 @@ export default async function RentalsPage({
   const filtering = Boolean(filters.q || filters.situation);
 
   const client = await createClient();
-  const [{ rentals, hasMore, total }, cards, frota, aberta, emAberto] =
+  const [{ rentals, hasMore, total }, cards, frota, aberta, emAberto, pagos] =
     await Promise.all([
       listRentals(client, filters),
       // Sem filtro: os cards são da locadora inteira, e não podem mudar porque
@@ -292,8 +293,10 @@ export default async function RentalsPage({
       // A locação aberta no painel pode não estar nesta página — o link veio
       // de outro filtro, do painel do locatário, ou de um endereço colado.
       aberto ? findRental(client, aberto) : null,
-      // As cobranças em aberto só custam quando o painel abre.
+      // As cobranças em aberto e os pagamentos já lançados só custam quando
+      // o painel abre.
       aberto ? overdueCharges(client, aberto) : [],
+      aberto ? rentalPayments(client, aberto) : [],
     ]);
 
   // O contador do chip responde "quantas sobrariam se eu clicasse aqui": a
@@ -541,6 +544,7 @@ export default async function RentalsPage({
         <RentalPanel
           rental={aberta}
           charges={emAberto}
+          payments={pagos}
           closeHref={href(filters, { open: undefined })}
         />
       )}
