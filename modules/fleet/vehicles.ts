@@ -1,5 +1,5 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
-import { daysSince, daysUntil } from "@/lib/calendar";
+import { daysSinceDay, daysUntil } from "@/lib/calendar";
 import { UserError } from "@/lib/user-error";
 
 /**
@@ -91,6 +91,14 @@ export type Vehicle = {
   crlvPath: string | null;
   crvPath: string | null;
   createdAt: string;
+  /**
+   * Desde quando esta moto está parada: a última devolução, ou o cadastro.
+   *
+   * Quem resolve o "ou" é a view `fleet` — moto que nunca foi alugada continua
+   * contando do dia em que entrou na frota. É dia de calendário, não instante:
+   * a pergunta é de folhinha.
+   */
+  idleSince: string;
 };
 
 /**
@@ -143,6 +151,8 @@ type VehicleRow = {
   crlv_path: string | null;
   crv_path: string | null;
   created_at: string;
+  /** Só a view tem: a escrita devolve a linha da tabela. */
+  idle_since?: string | null;
   tenants: { name: string } | null;
 };
 
@@ -178,6 +188,11 @@ function toVehicle(row: VehicleRow): Vehicle {
     crlvPath: row.crlv_path,
     crvPath: row.crv_path,
     createdAt: row.created_at,
+    // A escrita devolve a linha da tabela, que não tem a coluna derivada — o
+    // mesmo já vale para `status`, que só a view sabe calcular. O cadastro é o
+    // fallback certo: uma moto que acabou de ser criada ou corrigida na tela
+    // vai ser relida pela view no próximo carregamento.
+    idleSince: row.idle_since ?? row.created_at.slice(0, 10),
   };
 }
 
@@ -305,7 +320,7 @@ const SORTS = {
   // O enum do Postgres ordena pela ordem em que foi declarado, que é a ordem
   // de operação: disponível, reservada, em manutenção, indisponível.
   status: { column: "status" },
-  daysWithoutRental: { column: "created_at", reversed: true },
+  daysWithoutRental: { column: "idle_since", reversed: true },
   licensing: { column: "licensing_due_date" },
 } as const satisfies Record<
   string,
@@ -916,13 +931,12 @@ export const LICENSING_WARNING_DAYS = 60;
  * Derivado em leitura, sem coluna: um contador materializado desincroniza e
  * mente justamente no dia em que o gestor confia nele.
  *
- * Enquanto o módulo de Locações não existir, `since` é a data de cadastro —
- * uma moto que nunca foi alugada está parada desde que entrou na frota. Quando
- * Locações existir, passa a ser a data da última devolução, e só o argumento
- * muda.
+ * `since` é o `idleSince` da moto: a data da última devolução, ou a do
+ * cadastro para quem nunca foi alugada. Quem escolhe entre as duas é a view
+ * `fleet`; aqui só se conta.
  */
 export function daysWithoutRental(since: string, today = new Date()): number {
-  return daysSince(since, today);
+  return daysSinceDay(since, today);
 }
 
 /**

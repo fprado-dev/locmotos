@@ -12,8 +12,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import type { Charge, Payment, Rental } from "@/modules/rentals";
+import {
+  rentalWeeks,
+  type Charge,
+  type Payment,
+  type Rental,
+} from "@/modules/rentals";
 import { OverdueCharges, RegisteredPayments } from "../charges-block";
+import { EndRentalDialog } from "./end-rental-dialog";
 
 /** Um título de seção do painel. */
 function Section({
@@ -168,12 +174,60 @@ export function RentalPanel({
             </div>
           </Section>
 
+          {encerrada && (
+            <Section title="O encerramento">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                <Datum label="Devolvida em">{formatDay(rental.endedOn!)}</Datum>
+                <Datum label="Duração">
+                  {rentalWeeks(rental)}{" "}
+                  {rentalWeeks(rental) === 1 ? "semana" : "semanas"}
+                </Datum>
+                {rental.endedEarly && (
+                  <Datum label="Rescisão antecipada">
+                    faltavam {rental.weeksRemaining}{" "}
+                    {rental.weeksRemaining === 1 ? "semana" : "semanas"}
+                  </Datum>
+                )}
+                {rental.earlyTerminationFee !== null && (
+                  <Datum label="Cobrado na rescisão">
+                    <span className="tabular-nums">
+                      R$ {formatInteger(rental.earlyTerminationFee)}
+                    </span>
+                  </Datum>
+                )}
+                {rental.depositReturned !== null && (
+                  <Datum label="Caução devolvida">
+                    <span className="tabular-nums">
+                      R$ {formatInteger(rental.depositReturned)}
+                    </span>
+                  </Datum>
+                )}
+                {rental.depositDiscount !== null &&
+                  rental.depositDiscount > 0 && (
+                    <Datum label="Desconto na caução">
+                      <span className="tabular-nums">
+                        R$ {formatInteger(rental.depositDiscount)}
+                      </span>
+                      {/* O motivo fica junto do número: um desconto sem
+                          explicação é dinheiro sumindo da caução. */}
+                      <span className="block text-xs text-subtle">
+                        {rental.depositDiscountReason}
+                      </span>
+                    </Datum>
+                  )}
+              </div>
+            </Section>
+          )}
+
           <OverdueCharges charges={charges} />
 
           <RegisteredPayments payments={payments} />
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">
+          {/* Encerrar é decisão uma a uma, com a moto no pátio — por isso vive
+              aqui e não na barra de lote, que esta tela nem tem. */}
+          {!encerrada && <EndRentalDialog rental={rental} />}
           <Link
             href={`/fleet/${rental.vehicleId}`}
             className={buttonVariants({ variant: "outline", size: "lg" })}

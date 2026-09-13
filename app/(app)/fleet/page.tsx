@@ -220,7 +220,7 @@ function VehicleRow({
   /** Acabou de ser cadastrada: a linha se apresenta e o realce apaga sozinho. */
   entering?: boolean;
 }) {
-  const stopped = daysWithoutRental(vehicle.createdAt);
+  const stopped = daysWithoutRental(vehicle.idleSince);
 
   return (
     <TableRow

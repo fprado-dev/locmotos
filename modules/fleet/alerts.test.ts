@@ -12,17 +12,21 @@ import {
 const hoje = new Date("2026-09-11T12:00:00-03:00");
 
 describe("dias sem locação", () => {
-  it("conta a partir do cadastro enquanto não há locações", () => {
-    expect(daysWithoutRental("2026-08-12T10:00:00Z", hoje)).toBe(30);
+  // O argumento é o `idleSince` da moto: a data da última devolução, ou a do
+  // cadastro para quem nunca foi alugada. Quem escolhe entre as duas é a view
+  // `fleet`; aqui só se prova a conta.
+  it("conta a partir do dia em que a moto ficou parada", () => {
+    expect(daysWithoutRental("2026-08-12", hoje)).toBe(30);
   });
 
-  it("é zero no dia em que a moto entrou na frota", () => {
-    expect(daysWithoutRental("2026-09-11T02:00:00-03:00", hoje)).toBe(0);
+  it("é zero no próprio dia", () => {
+    expect(daysWithoutRental("2026-09-11", hoje)).toBe(0);
   });
 
   it("conta dia de calendário, não vinte e quatro horas", () => {
-    // Cadastrada ontem às 23h: são poucas horas, mas é um dia parada.
-    expect(daysWithoutRental("2026-09-10T23:00:00-03:00", hoje)).toBe(1);
+    // Devolvida ontem no fim do dia: são poucas horas, mas é um dia parada. E
+    // a data não passa por `new Date()`, onde meia-noite UTC seria anteontem.
+    expect(daysWithoutRental("2026-09-10", hoje)).toBe(1);
   });
 });
 
