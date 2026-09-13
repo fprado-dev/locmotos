@@ -7,6 +7,7 @@ import {
 } from "@/lib/calendar";
 import { UserError } from "@/lib/user-error";
 import { findVehicle, type VehicleStatus } from "@/modules/fleet";
+import { settleLastCycle } from "./charges";
 import { findRenter } from "@/modules/renters";
 
 /**
@@ -460,6 +461,11 @@ export type Ending = {
  * continua devida depois da devolução da moto, e quem avisa antes de confirmar
  * é a tela.
  *
+ * O que acontece com o dinheiro é uma coisa só: o ciclo em curso é rateado por
+ * dia (issue #46). Quem devolve na quarta paga três dias da semana, não sete —
+ * e quem já tinha pago a semana adiantada continua com ela inteira, porque
+ * crédito a devolver é coisa que a v1 não sabe guardar.
+ *
  * A rescisão antecipada é **registrada, não calculada**. Quanto paga quem sai
  * antes do fim da fidelidade é a lacuna nº 2 do `CONTEXT.md`, e só o dono da
  * locadora responde. Aqui fica gravado que foi antecipada e quantas semanas
@@ -546,6 +552,14 @@ export async function endRental(
       "Esta locação acabou de ser encerrada em outra tela. Recarregue.",
     );
   }
+
+  // A conta fecha junto com a locação: o ciclo em curso deixa de valer a
+  // semana cheia e passa a valer os dias andados. Quem sabe a regra é o banco,
+  // que precisa da mesma conta no gerador de ciclos.
+  //
+  // Depois do `update` de propósito: ratear depende de `ended_on` já gravado, e
+  // quem perdeu a corrida acima nem chega aqui.
+  await settleLastCycle(client, id);
 
   const encerrada = await findRental(client, id);
   if (!encerrada)
