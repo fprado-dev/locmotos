@@ -154,8 +154,15 @@ describe("isolamento entre locadoras", () => {
   let daDona: Renter;
 
   beforeAll(async () => {
-    dona = (await createManager()).client;
-    vizinha = (await createManager()).client;
+    // As duas locadoras não dependem uma da outra: em série seriam seis idas
+    // ao Auth esperando em fila.
+    const [primeira, segunda] = await Promise.all([
+      createManager(),
+      createManager(),
+    ]);
+    dona = primeira.client;
+    vizinha = segunda.client;
+
     daDona = await createRenter(dona, ana);
   });
 
@@ -209,16 +216,15 @@ describe("lista, busca e restrição", () => {
   beforeAll(async () => {
     gestor = (await createManager()).client;
 
-    ana2 = await createRenter(gestor, ana);
-    bruno = await createRenter(gestor, {
-      name: "Bruno Salles",
-      cpf: "11144477735",
-      cnhDueDate: "2030-01-01",
-    });
-    await createRenter(gestor, {
-      name: "Carla Nunes",
-      cpf: "39053344705",
-    });
+    [ana2, bruno] = await Promise.all([
+      createRenter(gestor, ana),
+      createRenter(gestor, {
+        name: "Bruno Salles",
+        cpf: "11144477735",
+        cnhDueDate: "2030-01-01",
+      }),
+      createRenter(gestor, { name: "Carla Nunes", cpf: "39053344705" }),
+    ]);
   });
 
   it("acha por pedaço do nome, sem ligar para a caixa", async () => {
