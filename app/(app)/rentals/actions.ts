@@ -1,10 +1,56 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { managerLabel } from "@/app/ui";
 import { MAX_AMOUNT, optionalField, optionalNumber } from "@/lib/form";
 import { createClient } from "@/lib/supabase/server";
 import { UserError } from "@/lib/user-error";
-import { endRental } from "@/modules/rentals";
+import {
+  endRental,
+  recordInspection,
+  type InspectionInput,
+} from "@/modules/rentals";
+import { currentTenant } from "@/modules/tenants";
+
+/** O teto do odômetro, que é o da coluna `integer` com folga de sobra. */
+const MAX_ODOMETER = 999_999;
+
+/**
+ * O que o gestor anotou olhando a moto.
+ *
+ * Os três campos são os mesmos nas duas pontas, e por isso a leitura do
+ * formulário é uma só — quem decide o que fazer com um formulário em branco é
+ * quem chama.
+ */
+async function inspectionFrom(
+  formData: FormData,
+  client: Awaited<ReturnType<typeof createClient>>,
+): Promise<InspectionInput> {
+  return {
+    odometer: optionalNumber(formData, "odometer", "Quilometragem", {
+      max: MAX_ODOMETER,
+      integer: true,
+    }),
+    fuel: optionalNumber(formData, "fuel", "Combustível", {
+      max: 4,
+      integer: true,
+    }),
+    damages: optionalField(formData, "damages"),
+    // O nome é gravado como está agora: a locadora pode ser renomeada, e quem
+    // vistoriou foi o nome de então. É o mesmo que o pagamento faz.
+    by: managerLabel((await currentTenant(client))?.name),
+  };
+}
+
+/** O id da locação que veio do formulário, que veio do browser. */
+function rentalId(formData: FormData): string {
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) {
+    throw new UserError("Locação não encontrada.");
+  }
+
+  return id;
+}
 
 /**
  * O que o encerramento tem a contar.
@@ -28,12 +74,9 @@ export async function closeRental(
   let frase: string;
 
   try {
-    const id = formData.get("id");
-    if (typeof id !== "string" || !id) {
-      throw new UserError("Locação não encontrada.");
-    }
-
+    const id = rentalId(formData);
     const client = await createClient();
+
     const rental = await endRental(client, id, {
       endedOn: optionalField(formData, "endedOn"),
       depositDiscount: optionalNumber(
@@ -49,6 +92,9 @@ export async function closeRental(
         "Valor cobrado na rescisão",
         { max: MAX_AMOUNT },
       ),
+      // Em branco não é erro: a vistoria de devolução é opcional, e o módulo
+      // devolve `null` sem escrever linha nenhuma.
+      inspection: await inspectionFrom(formData, client),
     });
 
     frase = `A ${rental.vehicle.plate} voltou para a frota.`;
@@ -67,4 +113,44 @@ export async function closeRental(
   revalidatePath("/renters");
   revalidatePath("/rentals");
   return { done: frase };
+}
+
+/**
+ * Registra — ou corrige — a vistoria de entrega.
+ *
+ * Formulário em branco **é** erro aqui, ao contrário do encerramento: quem
+ * abriu este diálogo veio registrar alguma coisa, e fechar em silêncio pareceu
+ * ter salvado.
+ */
+export async function saveHandoverInspection(
+  _state: EndingState,
+  formData: FormData,
+): Promise<EndingState> {
+  try {
+    const id = rentalId(formData);
+    const client = await createClient();
+
+    const vistoria = await recordInspection(
+      client,
+      id,
+      "handover",
+      await inspectionFrom(formData, client),
+    );
+
+    if (!vistoria) {
+      throw new UserError(
+        "Anote ao menos a quilometragem, o combustível ou uma avaria.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof UserError) {
+      return { error: error.message, field: error.field };
+    }
+
+    console.error("Falha ao registrar vistoria", error);
+    return { error: "Não foi possível salvar a vistoria. Tente de novo." };
+  }
+
+  revalidatePath("/rentals");
+  return { done: "Vistoria de entrega registrada." };
 }

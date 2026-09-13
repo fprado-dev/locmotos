@@ -15,11 +15,13 @@ import { cn } from "@/lib/utils";
 import {
   rentalWeeks,
   type Charge,
+  type Inspections,
   type Payment,
   type Rental,
 } from "@/modules/rentals";
 import { OverdueCharges, RegisteredPayments } from "../charges-block";
 import { EndRentalDialog } from "./end-rental-dialog";
+import { InspectionsBlock } from "./inspection";
 
 /** Um título de seção do painel. */
 function Section({
@@ -70,6 +72,7 @@ export function RentalPanel({
   rental,
   charges,
   payments,
+  inspections,
   closeHref,
 }: {
   rental: Rental;
@@ -77,6 +80,8 @@ export function RentalPanel({
   charges: Charge[];
   /** Os pagamentos já lançados, para desfazer o que entrou errado. */
   payments: Payment[];
+  /** O estado da moto nas duas pontas, quando alguém anotou. */
+  inspections: Inspections;
   closeHref: string;
 }) {
   const router = useRouter();
@@ -219,6 +224,8 @@ export function RentalPanel({
             </Section>
           )}
 
+          <InspectionsBlock rentalId={rental.id} inspections={inspections} />
+
           <OverdueCharges charges={charges} />
 
           <RegisteredPayments payments={payments} />
@@ -227,7 +234,9 @@ export function RentalPanel({
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">
           {/* Encerrar é decisão uma a uma, com a moto no pátio — por isso vive
               aqui e não na barra de lote, que esta tela nem tem. */}
-          {!encerrada && <EndRentalDialog rental={rental} />}
+          {!encerrada && (
+            <EndRentalDialog rental={rental} handover={inspections.handover} />
+          )}
           <Link
             href={`/fleet/${rental.vehicleId}`}
             className={buttonVariants({ variant: "outline", size: "lg" })}

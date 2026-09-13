@@ -11,6 +11,17 @@ export {
   type Payment,
 } from "./charges";
 export {
+  INSPECTION_MOMENTS,
+  isBlankInspection,
+  kilometersRun,
+  recordInspection,
+  rentalInspections,
+  type Inspection,
+  type InspectionInput,
+  type InspectionMoment,
+  type Inspections,
+} from "./inspections";
+export {
   activeRentalForRenter,
   activeRentalForVehicle,
   commitmentAt,

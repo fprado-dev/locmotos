@@ -131,7 +131,7 @@ _Código_: `daysWithoutRental`
 _Evitar_: ociosidade, dias parado, idle
 
 **Vistoria**:
-Registro do estado de um veículo na entrega e na devolução: quilometragem, combustível e avarias.
+Registro do estado de um veículo na entrega e na devolução: quilometragem, combustível e avarias. **Nenhuma das duas é obrigatória** e nenhum dos três campos é: abrir locação continua sendo um passo só, e o gestor anota o que conferiu. Uma por ponta — registrar de novo **corrige** a que existe, e quem corrige passa a ser quem assina. Combustível é o ponteiro do tanque em quartos, de vazio a cheio; avaria é **texto livre**, não lista de itens; foto ficou fora da v1. Os quilômetros rodados são a subtração entre as duas pontas, derivados na leitura — só existem quando as duas anotaram o odômetro.
 _Código_: `Inspection`
 _Evitar_: checklist, laudo, conferência
 

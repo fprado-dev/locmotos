@@ -19,6 +19,7 @@ import {
   findRental,
   listRentals,
   overdueCharges,
+  rentalInspections,
   rentalPayments,
   rentalCounts,
   RENTAL_SITUATIONS,
@@ -281,23 +282,34 @@ export default async function RentalsPage({
   const filtering = Boolean(filters.q || filters.situation);
 
   const client = await createClient();
-  const [{ rentals, hasMore, total }, cards, frota, aberta, emAberto, pagos] =
-    await Promise.all([
-      listRentals(client, filters),
-      // Sem filtro: os cards são da locadora inteira, e não podem mudar porque
-      // o gestor digitou três letras de uma placa.
-      rentalCounts(client),
-      // Quantas motos a locadora tem, para "alugadas" ter sobre o que ser uma
-      // fração.
-      fleetSummary(client),
-      // A locação aberta no painel pode não estar nesta página — o link veio
-      // de outro filtro, do painel do locatário, ou de um endereço colado.
-      aberto ? findRental(client, aberto) : null,
-      // As cobranças em aberto e os pagamentos já lançados só custam quando
-      // o painel abre.
-      aberto ? overdueCharges(client, aberto) : [],
-      aberto ? rentalPayments(client, aberto) : [],
-    ]);
+  const [
+    { rentals, hasMore, total },
+    cards,
+    frota,
+    aberta,
+    emAberto,
+    pagos,
+    vistorias,
+  ] = await Promise.all([
+    listRentals(client, filters),
+    // Sem filtro: os cards são da locadora inteira, e não podem mudar porque
+    // o gestor digitou três letras de uma placa.
+    rentalCounts(client),
+    // Quantas motos a locadora tem, para "alugadas" ter sobre o que ser uma
+    // fração.
+    fleetSummary(client),
+    // A locação aberta no painel pode não estar nesta página — o link veio
+    // de outro filtro, do painel do locatário, ou de um endereço colado.
+    aberto ? findRental(client, aberto) : null,
+    // As cobranças em aberto e os pagamentos já lançados só custam quando
+    // o painel abre.
+    aberto ? overdueCharges(client, aberto) : [],
+    aberto ? rentalPayments(client, aberto) : [],
+    // As duas vistorias, que o painel mostra uma ao lado da outra.
+    aberto
+      ? rentalInspections(client, aberto)
+      : { handover: null, return: null },
+  ]);
 
   // O contador do chip responde "quantas sobrariam se eu clicasse aqui": a
   // busca mexe nos números, e sem busca é a mesma conta dos cards.
@@ -545,6 +557,7 @@ export default async function RentalsPage({
           rental={aberta}
           charges={emAberto}
           payments={pagos}
+          inspections={vistorias}
           closeHref={href(filters, { open: undefined })}
         />
       )}
