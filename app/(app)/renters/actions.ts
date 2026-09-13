@@ -178,7 +178,7 @@ export async function openNewRental(
       }),
     });
 
-    nova = { id: rental.id, plate: rental.vehicle?.plate ?? "moto" };
+    nova = { id: rental.id, plate: rental.vehicle.plate };
   } catch (error) {
     const recado = userError(error);
     if (recado) return recado;

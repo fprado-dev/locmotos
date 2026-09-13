@@ -18,7 +18,14 @@ import {
   restrictRenters,
   type Renter,
 } from "@/modules/renters";
-import { activeRentalForRenter, openRental } from "./index";
+import {
+  activeRentalForRenter,
+  findRental,
+  listRentals,
+  openRental,
+  rentalCounts,
+  type Rental,
+} from "./index";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -124,7 +131,7 @@ describe("abertura de locação", () => {
       deposit: 500,
       endedOn: null,
     });
-    expect(locação.vehicle?.plate).toBe(moto.plate);
+    expect(locação.vehicle.plate).toBe(moto.plate);
   });
 
   it("deixa a moto reservada na leitura da frota, sem ninguém tocar no select", async () => {
@@ -330,33 +337,112 @@ describe("a situação reservada não se digita", () => {
   });
 });
 
-describe("os chips de locação na tela de Locatários", () => {
+/**
+ * Uma locadora inteira só para as contagens.
+ *
+ * Lista, chips e cards respondem sobre a locadora toda, então o bloco precisa
+ * de uma carteira e de uma frota que ninguém mais mexeu.
+ */
+describe("a lista de Locações e os chips de Locatários", () => {
   let gestor: SupabaseClient;
   let comMoto: Renter;
+  let outroComMoto: Renter;
   let semMoto: Renter;
   let moto: Vehicle;
+  let outraMoto: Vehicle;
+  let primeira: Rental;
+  let segunda: Rental;
 
   beforeAll(async () => {
     gestor = (await createManager()).client;
 
-    [comMoto, semMoto, moto] = await Promise.all([
+    [comMoto, outroComMoto, semMoto, moto, outraMoto] = await Promise.all([
       createRenter(gestor, ana),
       createRenter(gestor, { name: "Bruno Salles", cpf: "11144477735" }),
-      novaMoto(gestor),
+      createRenter(gestor, { name: "Carla Nunes", cpf: "39053344705" }),
+      novaMoto(gestor, 300),
+      novaMoto(gestor, 420),
     ]);
 
-    await openRental(gestor, {
+    // Em série, e não em paralelo: a ordem padrão da lista é a mais recente
+    // primeiro, e duas aberturas simultâneas não têm ordem para provar.
+    primeira = await openRental(gestor, {
       renterId: comMoto.id,
       vehicleId: moto.id,
       weeklyPrice: 300,
+      startedOn: "2026-08-01",
+    });
+    segunda = await openRental(gestor, {
+      renterId: outroComMoto.id,
+      vehicleId: outraMoto.id,
+      weeklyPrice: 420,
+      startedOn: "2026-09-01",
     });
   });
 
-  it("carrega a placa da locação atual na lista", async () => {
+  it("vem com a locação mais recente primeiro quando ninguém pediu ordem", async () => {
+    const { rentals, total } = await listRentals(gestor);
+
+    expect(rentals.map((rental) => rental.id)).toEqual([
+      segunda.id,
+      primeira.id,
+    ]);
+    expect(total).toBe(2);
+  });
+
+  it("traz a moto e o nome do locatário resolvidos, sem segunda ida", async () => {
+    const { rentals } = await listRentals(gestor);
+
+    expect(rentals[0]).toMatchObject({
+      renterName: "Bruno Salles",
+      weeklyPrice: 420,
+      endedOn: null,
+    });
+    expect(rentals[0].vehicle.plate).toBe(outraMoto.plate);
+  });
+
+  it("acha pela placa e pelo nome do locatário, na mesma caixa", async () => {
+    const porPlaca = await listRentals(gestor, { q: moto.plate });
+    expect(porPlaca.rentals.map((rental) => rental.id)).toEqual([primeira.id]);
+
+    const porNome = await listRentals(gestor, { q: "salles" });
+    expect(porNome.rentals.map((rental) => rental.id)).toEqual([segunda.id]);
+  });
+
+  it("conta os chips e a receita semanal contratada", async () => {
+    expect(await rentalCounts(gestor)).toEqual({
+      all: 2,
+      active: 2,
+      ended: 0,
+      activeWeeklyPrice: 720,
+    });
+  });
+
+  it("o contador do chip acompanha a busca", async () => {
+    // "quantas sobrariam se eu clicasse aqui", não "quantas existem".
+    expect(await rentalCounts(gestor, { q: "salles" })).toMatchObject({
+      all: 1,
+      active: 1,
+      activeWeeklyPrice: 420,
+    });
+  });
+
+  it("o chip Ativas devolve as que estão de pé, e Encerradas nenhuma ainda", async () => {
+    const ativas = await listRentals(gestor, { situation: "active" });
+    expect(ativas.total).toBe(2);
+
+    const encerradas = await listRentals(gestor, { situation: "ended" });
+    expect(encerradas.total).toBe(0);
+  });
+
+  it("carrega a placa da locação atual na lista de Locatários", async () => {
     const { renters } = await listRenters(gestor);
     const achada = renters.find((renter) => renter.id === comMoto.id);
 
-    expect(achada?.rental?.plate).toBe(moto.plate);
+    expect(achada?.rental).toMatchObject({
+      id: primeira.id,
+      plate: moto.plate,
+    });
     expect(
       renters.find((renter) => renter.id === semMoto.id)?.rental,
     ).toBeNull();
@@ -367,8 +453,10 @@ describe("os chips de locação na tela de Locatários", () => {
       situation: "with-rental",
     });
 
-    expect(renters.map((renter) => renter.id)).toEqual([comMoto.id]);
-    expect(total).toBe(1);
+    expect(renters.map((renter) => renter.id).sort()).toEqual(
+      [comMoto.id, outroComMoto.id].sort(),
+    );
+    expect(total).toBe(2);
   });
 
   it("o chip Sem locação devolve o complemento, não a carteira inteira", async () => {
@@ -382,8 +470,8 @@ describe("os chips de locação na tela de Locatários", () => {
 
   it("conta os dois chips, e a busca mexe nos números", async () => {
     expect(await renterCounts(gestor)).toMatchObject({
-      all: 2,
-      "with-rental": 1,
+      all: 3,
+      "with-rental": 2,
       "without-rental": 1,
     });
 
@@ -443,8 +531,8 @@ describe("isolamento entre locadoras", () => {
     expect(error?.code).toBe("23503");
   });
 
-  it("não lê a locação de outra locadora", async () => {
-    await openRental(dona, {
+  it("não lê a locação de outra locadora, nem pelo id, nem pela lista", async () => {
+    const daDona = await openRental(dona, {
       renterId: locatáriaDaDona.id,
       vehicleId: motoDaDona.id,
       weeklyPrice: 300,
@@ -453,9 +541,16 @@ describe("isolamento entre locadoras", () => {
     expect(
       await activeRentalForRenter(dona, locatáriaDaDona.id),
     ).not.toBeNull();
+    expect(await findRental(dona, daDona.id)).not.toBeNull();
+
     // O mesmo `null` de um id inventado: a RLS filtra antes, então nem a
-    // existência do registro vaza.
+    // existência do registro vaza. E a lista da vizinha nem chega perto.
     expect(await activeRentalForRenter(vizinha, locatáriaDaDona.id)).toBeNull();
+    expect(await findRental(vizinha, daDona.id)).toBeNull();
+
+    const { rentals, total } = await listRentals(vizinha);
+    expect(rentals.map((rental) => rental.id)).not.toContain(daDona.id);
+    expect(total).toBe(0);
   });
 
   it("não enxerga a moto da vizinha como reservada", async () => {

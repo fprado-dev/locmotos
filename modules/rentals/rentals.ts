@@ -43,8 +43,15 @@ export type Rental = {
   deposit: number | null;
   endedOn: string | null;
   createdAt: string;
-  /** A moto, para a tela não precisar de uma segunda ida ao banco. */
-  vehicle: { plate: string; brand: string; model: string } | null;
+  /**
+   * A moto e o nome do locatário, resolvidos na leitura.
+   *
+   * Não são opcionais porque a view junta as duas pontas por dentro: uma
+   * locação sem moto ou sem locatário não existe — o FK composto é `not null`
+   * nos dois lados, e a baixa é soft delete, então a linha continua lá.
+   */
+  vehicle: { plate: string; brand: string; model: string };
+  renterName: string;
 };
 
 /**
@@ -74,10 +81,26 @@ type RentalRow = {
   deposit: number | string | null;
   ended_on: string | null;
   created_at: string;
-  vehicles: { plate: string; brand: string; model: string } | null;
+  plate: string;
+  brand: string;
+  model: string;
+  renter_name: string;
 };
 
-const COLUMNS = "*, vehicles(plate, brand, model)";
+/**
+ * De onde se lê uma locação, e onde se escreve nela.
+ *
+ * A leitura passa pela view `rental_details`, que é a locação com a moto e o
+ * locatário já resolvidos. É o que permite buscar por placa **ou** por nome na
+ * mesma caixa e ordenar por qualquer das duas: uma condição `or` entre colunas
+ * de tabelas embutidas não existe no PostgREST.
+ *
+ * A escrita continua na tabela — view com junção não é atualizável — e a
+ * abertura relê pela view antes de devolver, para quem chamou receber sempre a
+ * mesma forma.
+ */
+const READ = "rental_details";
+const WRITE = "rentals";
 
 // `numeric` chega como string em algumas versões do PostgREST e como número em
 // outras; quem consome o módulo não deveria precisar saber disso.
@@ -98,7 +121,8 @@ function toRental(row: RentalRow): Rental {
     deposit: toAmount(row.deposit),
     endedOn: row.ended_on,
     createdAt: row.created_at,
-    vehicle: row.vehicles,
+    vehicle: { plate: row.plate, brand: row.brand, model: row.model },
+    renterName: row.renter_name,
   };
 }
 
@@ -106,6 +130,26 @@ function toRental(row: RentalRow): Rental {
 function day(date: string): string {
   const [ano, mês, dia] = date.split("-");
   return `${dia}/${mês}/${ano}`;
+}
+
+/**
+ * Uma locação pelo id, ou `null`.
+ *
+ * Locação de outra locadora cai no mesmo `null` de locação inexistente: a RLS
+ * filtra antes, então nem a existência do registro vaza.
+ */
+export async function findRental(
+  client: SupabaseClient,
+  id: string,
+): Promise<Rental | null> {
+  const { data, error } = await client
+    .from(READ)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? toRental(data as RentalRow) : null;
 }
 
 /**
@@ -119,35 +163,30 @@ export async function activeRentalForVehicle(
   vehicleId: string,
 ): Promise<Rental | null> {
   const { data, error } = await client
-    .from("rentals")
-    .select(COLUMNS)
+    .from(READ)
+    .select("*")
     .eq("vehicle_id", vehicleId)
     .is("ended_on", null)
     .maybeSingle();
 
   if (error) throw error;
-  return data ? toRental(data as unknown as RentalRow) : null;
+  return data ? toRental(data as RentalRow) : null;
 }
 
-/**
- * A locação ativa de um locatário, ou `null`.
- *
- * Locação de outra locadora cai no mesmo `null` de locação inexistente: a RLS
- * filtra antes, então nem a existência do registro vaza.
- */
+/** A locação ativa de um locatário, ou `null`. */
 export async function activeRentalForRenter(
   client: SupabaseClient,
   renterId: string,
 ): Promise<Rental | null> {
   const { data, error } = await client
-    .from("rentals")
-    .select(COLUMNS)
+    .from(READ)
+    .select("*")
     .eq("renter_id", renterId)
     .is("ended_on", null)
     .maybeSingle();
 
   if (error) throw error;
-  return data ? toRental(data as unknown as RentalRow) : null;
+  return data ? toRental(data as RentalRow) : null;
 }
 
 /**
@@ -237,7 +276,7 @@ export async function openRental(
 
   if (atual) {
     throw new UserError(
-      `${renter.name} já está com a ${atual.vehicle?.plate ?? "moto"}. Encerre a locação atual primeiro.`,
+      `${renter.name} já está com a ${atual.vehicle.plate}. Encerre a locação atual primeiro.`,
       "renterId",
     );
   }
@@ -264,7 +303,7 @@ export async function openRental(
   }
 
   const { data, error } = await client
-    .from("rentals")
+    .from(WRITE)
     .insert({
       vehicle_id: rental.vehicleId,
       renter_id: rental.renterId,
@@ -274,9 +313,243 @@ export async function openRental(
       commitment_months: rental.commitmentMonths ?? null,
       deposit: rental.deposit ?? null,
     })
-    .select(COLUMNS)
+    .select("id")
     .single();
 
   if (error) throw toDomainError(error);
-  return toRental(data as unknown as RentalRow);
+
+  // Relê pela view: quem chamou recebe a locação na mesma forma que a lista e
+  // o painel recebem, com moto e locatário resolvidos. A linha acabou de ser
+  // gravada pela locadora de quem está logado, então ela está lá.
+  const aberta = await findRental(client, (data as { id: string }).id);
+  if (!aberta) throw new Error("Locação aberta não pôde ser lida de volta.");
+
+  return aberta;
+}
+
+/** Quantas locações cabem numa página da lista. */
+export const RENTALS_PER_PAGE = 20;
+
+/**
+ * O recorte que os chips da tela oferecem.
+ *
+ * Duas, e não três: "Todas" é a ausência de recorte, como nas outras telas.
+ */
+export const RENTAL_SITUATIONS = ["active", "ended"] as const;
+
+export type RentalSituation = (typeof RENTAL_SITUATIONS)[number];
+
+/**
+ * O que o gestor pediu para ver.
+ *
+ * `q` procura por placa ou por nome do locatário numa busca só — o gestor tem
+ * a moto na frente ou a pessoa no telefone, e não sabe de antemão por qual dos
+ * dois vai procurar.
+ */
+export type RentalFilters = {
+  q?: string;
+  situation?: RentalSituation;
+  /** Começa em 1. */
+  page?: number;
+  sort?: RentalSort;
+  direction?: SortDirection;
+};
+
+/**
+ * Por qual coluna a lista vem ordenada.
+ *
+ * Situação não está aqui de propósito: ela virou chip, e com um filtro de
+ * "Ativas" ao lado, ordenar por ela responderia a mesma pergunta duas vezes —
+ * a mesma escolha que a coluna Restrição de Locatários.
+ */
+const SORTS = {
+  vehicle: { column: "plate" },
+  renter: { column: "renter_name" },
+  weeklyPrice: { column: "weekly_price" },
+  startedOn: { column: "started_on" },
+  commitment: { column: "commitment_months" },
+} as const satisfies Record<string, { column: string }>;
+
+/** As chaves de ordenação, para quem precisa validar o que veio da URL. */
+export const RENTAL_SORTS = Object.keys(SORTS) as RentalSort[];
+
+export type RentalSort = keyof typeof SORTS;
+
+export type SortDirection = "asc" | "desc";
+
+/**
+ * Como a lista chega quando ninguém pediu ordem: a locação mais recente
+ * primeiro — é a que o gestor acabou de abrir, e é por ela que ele volta.
+ */
+export const DEFAULT_RENTAL_SORT: {
+  sort: RentalSort;
+  direction: SortDirection;
+} = { sort: "startedOn", direction: "desc" };
+
+/**
+ * A busca da tela como uma condição do PostgREST, ou nada.
+ *
+ * Placa e nome por pedaço, na mesma caixa. A vírgula separa as alternativas na
+ * sintaxe do `or`, então ela — e os curingas — saem do termo antes de virar
+ * sintaxe em vez de busca.
+ */
+function searchClause(q: string | undefined): string | null {
+  const termo = q?.trim().replace(/[,()%*\\"]/g, "");
+  if (!termo) return null;
+
+  return [`plate.ilike.*${termo}*`, `renter_name.ilike.*${termo}*`].join(",");
+}
+
+/**
+ * Os filtros da tela aplicados sobre uma consulta já começada.
+ *
+ * Recebe e devolve o builder em vez de montar a consulta inteira porque a
+ * lista e os contadores começam de selects diferentes e terminam no mesmo
+ * recorte. `skipSituation` é o que faz o contador do chip responder "quantas
+ * sobrariam se eu clicasse aqui" em vez de "quantas existem".
+ *
+ * O tipo do builder do PostgREST carrega o schema inteiro em parâmetros, e
+ * anotá-lo por fora estoura o limite de instanciação do TypeScript; daí o
+ * genérico solto, preso só ao que é usado aqui dentro.
+ */
+type Filterable = {
+  or: (filter: string) => Filterable;
+  is: (column: string, value: null) => Filterable;
+  not: (column: string, operator: string, value: null) => Filterable;
+};
+
+function filtered<T extends Filterable>(
+  query: T,
+  filters: RentalFilters,
+  { skipSituation = false } = {},
+): T {
+  let atual: Filterable = query;
+
+  const busca = searchClause(filters.q);
+  if (busca) atual = atual.or(busca);
+
+  if (!skipSituation) {
+    // Ativa é a que não tem data de encerramento. A situação não é coluna
+    // própria porque o fato é o encerramento, não o rótulo.
+    if (filters.situation === "active") atual = atual.is("ended_on", null);
+    if (filters.situation === "ended") {
+      atual = atual.not("ended_on", "is", null);
+    }
+  }
+
+  return atual as T;
+}
+
+/**
+ * Uma página de locações da locadora de quem está logado.
+ *
+ * `total` é quantas passaram pelo filtro, não quantas vieram na página: é o N
+ * do "1–20 de N" no rodapé.
+ *
+ * ponytail: busca por pedaço de placa e de nome é varredura dentro da
+ * locadora; índice trigram (`pg_trgm`) quando uma locadora passar de alguns
+ * milhares de locações.
+ */
+export async function listRentals(
+  client: SupabaseClient,
+  filters: RentalFilters = {},
+): Promise<{ rentals: Rental[]; hasMore: boolean; total: number }> {
+  // O mesmo recorte responde às duas perguntas da tela: quais locações entram
+  // nesta página, e quantas passaram pelo filtro.
+  function scoped(count?: { count: "exact"; head: true }) {
+    return filtered(client.from(READ).select("*", count), filters);
+  }
+
+  let query = scoped();
+
+  const order = SORTS[filters.sort ?? DEFAULT_RENTAL_SORT.sort];
+  const ascending =
+    (filters.direction ?? DEFAULT_RENTAL_SORT.direction) === "asc";
+
+  // Valor ausente não é urgência: locação sem fidelidade acordada cai no fim
+  // da lista nos dois sentidos.
+  query = query.order(order.column, { ascending, nullsFirst: false });
+
+  // Desempate pela abertura, sempre. Sem ele, duas linhas de mesmo valor podem
+  // trocar de lugar entre uma página e a seguinte — e aí a paginação repete
+  // uma locação e esconde outra. É também o que põe na frente a que o gestor
+  // acabou de abrir, quando duas começam no mesmo dia.
+  query = query.order("created_at", { ascending: false });
+
+  const from = (Math.max(1, filters.page ?? 1) - 1) * RENTALS_PER_PAGE;
+
+  // A contagem vai numa consulta à parte, e não junto com as linhas, porque
+  // PostgREST recusa com 416 o `range` que começa além do fim — e a página
+  // vive na URL, onde qualquer número cabe.
+  const [page, counted] = await Promise.all([
+    // `range` é inclusivo nas duas pontas.
+    query.range(from, from + RENTALS_PER_PAGE - 1),
+    scoped({ count: "exact", head: true }),
+  ]);
+
+  if (page.error) throw page.error;
+  if (counted.error) throw counted.error;
+
+  const rows = page.data as RentalRow[];
+  const total = counted.count ?? rows.length;
+
+  return {
+    rentals: rows.map(toRental),
+    hasMore: from + rows.length < total,
+    total,
+  };
+}
+
+/**
+ * Os números do topo da tela, e os contadores dos chips.
+ *
+ * Chamada sem filtro, é o que os cards mostram: quantas locações estão de pé e
+ * quanto elas somam por semana. Com a busca, vira o contador de cada chip —
+ * "quantas sobrariam se eu clicasse aqui", que é o que faz do chip uma
+ * pergunta já respondida.
+ *
+ * `activeWeeklyPrice` é a receita **contratada**, não a recebida: é a soma do
+ * que foi acordado, e quem paga ou não paga é assunto de cobrança.
+ *
+ * ponytail: soma no aplicativo sobre uma leitura das locações da locadora,
+ * como em `fleetSummary`. Vira view agregada quando uma locadora passar de
+ * alguns milhares de locações.
+ */
+export type RentalCounts = {
+  all: number;
+  active: number;
+  ended: number;
+  activeWeeklyPrice: number;
+};
+
+export async function rentalCounts(
+  client: SupabaseClient,
+  filters: RentalFilters = {},
+): Promise<RentalCounts> {
+  const query = client.from(READ).select("ended_on, weekly_price");
+
+  const { data, error } = await filtered(query, filters, {
+    skipSituation: true,
+  });
+
+  if (error) throw error;
+
+  const rows = data as Pick<RentalRow, "ended_on" | "weekly_price">[];
+  const counts: RentalCounts = {
+    all: rows.length,
+    active: 0,
+    ended: 0,
+    activeWeeklyPrice: 0,
+  };
+
+  for (const row of rows) {
+    if (row.ended_on === null) {
+      counts.active += 1;
+      counts.activeWeeklyPrice += toAmount(row.weekly_price) ?? 0;
+    } else {
+      counts.ended += 1;
+    }
+  }
+
+  return counts;
 }

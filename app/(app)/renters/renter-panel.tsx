@@ -199,13 +199,14 @@ export function RenterPanel({
                 {rental ? (
                   <div className="overflow-hidden rounded-lg border border-border">
                     <div className="flex items-center gap-2.5 border-b border-border bg-surface-2 px-4 py-2.5">
-                      <span className="font-mono text-[13px] font-medium tracking-[0.02em]">
-                        {rental.vehicle?.plate ?? "—"}
-                      </span>
+                      <Link
+                        href={`/rentals?open=${rental.id}`}
+                        className="rounded-sm font-mono text-[13px] font-medium tracking-[0.02em] hover:underline"
+                      >
+                        {rental.vehicle.plate}
+                      </Link>
                       <span className="truncate text-[13px] text-muted-foreground">
-                        {rental.vehicle
-                          ? `${rental.vehicle.brand} ${rental.vehicle.model}`
-                          : ""}
+                        {rental.vehicle.brand} {rental.vehicle.model}
                       </span>
                       {/* A moto está a um clique: é dela que vêm quilometragem,
                           licenciamento e documentos. */}
