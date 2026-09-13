@@ -485,6 +485,71 @@ describe("rateio da última semana", () => {
     });
   });
 
+  it("encerramento retroativo descarta as semanas posteriores à devolução", async () => {
+    // Vinte dias de locação, ciclos gerados até hoje. A devolução lançada para
+    // doze dias atrás deixa o terceiro ciclo inteiramente no futuro dela.
+    const id = await locação(diasAntes(hoje, 20), "156.158.800-82");
+    await generateCharges(gestor);
+    expect(await ciclos(id)).toHaveLength(3);
+
+    await endRental(gestor, id, { endedOn: diasAntes(hoje, 12) });
+
+    expect(await ciclos(id)).toMatchObject([
+      {
+        cycle_start: diasAntes(hoje, 20),
+        cycle_end: diasAntes(hoje, 14),
+        amount: 300,
+      },
+      // Dois dias de sete: 300 ÷ 7 × 2.
+      {
+        cycle_start: diasAntes(hoje, 13),
+        cycle_end: diasAntes(hoje, 12),
+        amount: 85.71,
+      },
+    ]);
+
+    // E o locatário para de dever a semana em que a moto estava na garagem.
+    expect(await findRental(gestor, id)).toMatchObject({
+      overdueAmount: 385.71,
+    });
+  });
+
+  it("a semana posterior que já foi paga fica de pé: apagar deixaria dinheiro sem destino", async () => {
+    const id = await locação(diasAntes(hoje, 20), "427.088.394-46");
+    await generateCharges(gestor);
+
+    const [, , posterior] = await ciclos(id);
+    await payCharge(gestor, posterior.id, { by: "Gestor" });
+
+    await endRental(gestor, id, { endedOn: diasAntes(hoje, 12) });
+
+    expect(await ciclos(id)).toHaveLength(3);
+    expect((await ciclos(id))[2]).toMatchObject({
+      id: posterior.id,
+      amount: 300,
+    });
+  });
+
+  it('a policy estreita não vira "apagar cobrança"', async () => {
+    // A garantia é da RLS e não de um `where` na função: se um dia alguém
+    // montar o `delete` à mão pelo PostgREST, ele tem que continuar não
+    // conseguindo tirar da frente a semana que o locatário andou.
+    const id = await locação(diasAntes(hoje, 20), "388.233.846-64");
+    await generateCharges(gestor);
+    const [primeira] = await ciclos(id);
+
+    // Locação de pé: não há devolução, logo não há semana posterior a ela.
+    await gestor.from("charges").delete().eq("id", primeira.id);
+    expect(await ciclos(id)).toHaveLength(3);
+
+    // Encerrada: a semana andada continua fora do alcance, e só a posterior
+    // some — e some pelo encerramento, não por este `delete`.
+    await endRental(gestor, id, { endedOn: diasAntes(hoje, 12) });
+    await gestor.from("charges").delete().eq("id", primeira.id);
+
+    expect((await ciclos(id))[0]).toMatchObject({ id: primeira.id });
+  });
+
   it("a semana que nasce depois do encerramento já nasce rateada", async () => {
     // Aberta e encerrada antes de o gerador rodar: no encerramento não há
     // ciclo nenhum para ratear, e quem acerta a conta é o gerador de amanhã.

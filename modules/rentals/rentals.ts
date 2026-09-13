@@ -7,7 +7,7 @@ import {
 } from "@/lib/calendar";
 import { UserError } from "@/lib/user-error";
 import { findVehicle, type VehicleStatus } from "@/modules/fleet";
-import { settleLastCycle } from "./charges";
+import { settleReturn } from "./charges";
 import { recordInspection, type InspectionInput } from "./inspections";
 import { findRenter } from "@/modules/renters";
 
@@ -574,12 +574,14 @@ export async function endRental(
   }
 
   // A conta fecha junto com a locação: o ciclo em curso deixa de valer a
-  // semana cheia e passa a valer os dias andados. Quem sabe a regra é o banco,
-  // que precisa da mesma conta no gerador de ciclos.
+  // semana cheia e passa a valer os dias andados, e as semanas que começam
+  // depois da devolução — que existem quando o encerramento é retroativo — vão
+  // embora. Quem sabe as duas regras é o banco, que precisa da mesma conta no
+  // gerador de ciclos.
   //
-  // Depois do `update` de propósito: ratear depende de `ended_on` já gravado, e
-  // quem perdeu a corrida acima nem chega aqui.
-  await settleLastCycle(client, id);
+  // Depois do `update` de propósito: as duas dependem de `ended_on` já gravado,
+  // e quem perdeu a corrida acima nem chega aqui.
+  await settleReturn(client, id);
 
   const encerrada = await findRental(client, id);
   if (!encerrada)

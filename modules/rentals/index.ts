@@ -5,7 +5,7 @@ export {
   payCharge,
   rentalPayments,
   reversePayment,
-  settleLastCycle,
+  settleReturn,
   type Charge,
   type Delinquency,
   type Payment,

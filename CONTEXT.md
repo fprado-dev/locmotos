@@ -75,7 +75,7 @@ _Código_: `BillingCycle`
 _Evitar_: período, competência, mês
 
 **Cobrança**:
-Valor que o locatário deve por um ciclo. Vence no último dia do ciclo — o locatário usa a semana e paga por ela. Uma locação aberta hoje não nasce devendo. A última cobrança é **rateada por dia** quando a moto volta no meio da semana: `valor do ciclo ÷ 7 × dias andados`, ao centavo, com o período encolhendo junto. Rescisão antecipada não muda esse rateio — o que ela cobra a mais é valor digitado, e continua sendo a lacuna nº 2.
+Valor que o locatário deve por um ciclo. Vence no último dia do ciclo — o locatário usa a semana e paga por ela. Uma locação aberta hoje não nasce devendo. A última cobrança é **rateada por dia** quando a moto volta no meio da semana: `valor do ciclo ÷ 7 × dias andados`, ao centavo, com o período encolhendo junto. Rescisão antecipada não muda esse rateio — o que ela cobra a mais é valor digitado, e continua sendo a lacuna nº 2. Encerrar com data retroativa **descarta** as cobranças das semanas que começam depois da devolução: elas são sobra do gerador, não semana que alguém andou.
 _Código_: `Charge`
 _Evitar_: parcela, fatura, boleto, mensalidade, título
 
