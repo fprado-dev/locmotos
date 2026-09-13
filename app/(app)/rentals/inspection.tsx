@@ -51,44 +51,49 @@ export function InspectionFields({
   invalid?: string;
 }) {
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="odometer" className="text-xs">
-          Quilometragem
-        </Label>
-        <Input
-          id="odometer"
-          name="odometer"
-          type="number"
-          min={0}
-          max={999999}
-          step={1}
-          inputMode="numeric"
-          placeholder="Ex.: 12400"
-          defaultValue={inspection?.odometer ?? ""}
-          aria-invalid={invalid === "odometer"}
-        />
-      </div>
+    // Consulta de container e não de tela: os mesmos três campos entram num
+    // diálogo largo e num estreito, e quem decide se cabem lado a lado é a
+    // largura de onde eles estão — não a do monitor.
+    <div className="@container flex flex-col gap-4">
+      <div className="grid gap-4 @sm:grid-cols-[180px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="odometer" className="text-xs">
+            Quilometragem
+          </Label>
+          <Input
+            id="odometer"
+            name="odometer"
+            type="number"
+            min={0}
+            max={999999}
+            step={1}
+            inputMode="numeric"
+            placeholder="Ex.: 12400"
+            defaultValue={inspection?.odometer ?? ""}
+            aria-invalid={invalid === "odometer"}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-xs">Combustível</Label>
-        {/* Rádio e não select: o tanque tem cinco posições e "não anotei" é
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs">Combustível</Label>
+          {/* Rádio e não select: o tanque tem cinco posições e "não anotei" é
             simplesmente nenhuma marcada — que é o que opcional quer dizer. */}
-        <RadioGroup
-          name="fuel"
-          defaultValue={inspection?.fuel?.toString()}
-          className="flex h-9 items-center gap-4"
-        >
-          {FUEL_LABELS.map((label, quartos) => (
-            <label
-              key={label}
-              className="flex cursor-pointer items-center gap-1.5 text-[13px]"
-            >
-              <RadioGroupItem value={quartos.toString()} aria-label={label} />
-              {label}
-            </label>
-          ))}
-        </RadioGroup>
+          <RadioGroup
+            name="fuel"
+            defaultValue={inspection?.fuel?.toString()}
+            className="flex h-9 items-center gap-4"
+          >
+            {FUEL_LABELS.map((label, quartos) => (
+              <label
+                key={label}
+                className="flex cursor-pointer items-center gap-1.5 text-[13px]"
+              >
+                <RadioGroupItem value={quartos.toString()} aria-label={label} />
+                {label}
+              </label>
+            ))}
+          </RadioGroup>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -234,7 +239,7 @@ function HandoverDialog({
       </Button>
 
       <Dialog open={aberto} onOpenChange={setAberto}>
-        <DialogContent className="sm:max-w-[460px]">
+        <DialogContent className="max-h-[calc(100svh-3rem)] overflow-y-auto sm:max-w-[560px]">
           {/* `key` remonta o formulário a cada abertura: sem isso, o
               `defaultValue` dos campos guardaria o que foi digitado e
               descartado na vez anterior. */}

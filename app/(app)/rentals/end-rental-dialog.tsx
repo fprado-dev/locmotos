@@ -131,11 +131,16 @@ export function EndRentalDialog({
       </Button>
 
       <Dialog open={aberto} onOpenChange={setAberto}>
-        <DialogContent className="sm:max-w-[520px]">
-          <form action={formAction}>
+        {/* Teto de altura com o miolo rolando: este diálogo cresce com a
+            locação — rescisão, atraso, vistoria e caução podem aparecer todos
+            juntos —, e sem teto ele passava da tela levando junto o título e
+            os botões, que é onde se cancela. `svh` e não `vh` porque no
+            celular a barra do navegador some e volta. */}
+        <DialogContent className="flex max-h-[calc(100svh-3rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[640px]">
+          <form action={formAction} className="flex min-h-0 flex-1 flex-col">
             <input type="hidden" name="id" value={rental.id} />
 
-            <DialogHeader>
+            <DialogHeader className="shrink-0 gap-1.5 border-b border-border px-6 py-5 pr-12">
               <DialogTitle>
                 Encerrar a locação da {rental.vehicle.plate}
               </DialogTitle>
@@ -145,7 +150,7 @@ export function EndRentalDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="mt-5 flex flex-col gap-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
               <Field
                 name="endedOn"
                 label="Encerrada em"
@@ -157,6 +162,7 @@ export function EndRentalDialog({
                 min={rental.startedOn}
                 onChange={(event) => setEndedOn(event.target.value)}
                 invalid={state.field === "endedOn"}
+                className="max-w-[220px]"
               />
 
               {fidelidade?.early && (
@@ -179,6 +185,7 @@ export function EndRentalDialog({
                     min={0}
                     placeholder="0,00"
                     invalid={state.field === "earlyTerminationFee"}
+                    className="max-w-[220px]"
                   />
                 </div>
               )}
@@ -230,26 +237,32 @@ export function EndRentalDialog({
                     label="Caução retida"
                     value={`R$ ${formatInteger(caução)}`}
                   />
-                  <Field
-                    name="depositDiscount"
-                    label="Desconto por avaria"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={caução}
-                    value={desconto}
-                    placeholder="0,00"
-                    onChange={(event) => setDesconto(event.target.value)}
-                    invalid={state.field === "depositDiscount"}
-                  />
-                  {descontado > 0 && (
-                    <Field
-                      name="depositDiscountReason"
-                      label="Motivo do desconto"
-                      placeholder="Ex.: retrovisor quebrado"
-                      invalid={state.field === "depositDiscountReason"}
-                    />
-                  )}
+                  <div className="@container">
+                    <div className="grid gap-4 @sm:grid-cols-[180px_minmax(0,1fr)]">
+                      <Field
+                        name="depositDiscount"
+                        label="Desconto por avaria"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        max={caução}
+                        value={desconto}
+                        placeholder="0,00"
+                        onChange={(event) => setDesconto(event.target.value)}
+                        invalid={state.field === "depositDiscount"}
+                      />
+                      {/* O motivo entra ao lado do número, e não embaixo: é a
+                          mesma frase partida em dois campos. */}
+                      {descontado > 0 && (
+                        <Field
+                          name="depositDiscountReason"
+                          label="Motivo do desconto"
+                          placeholder="Ex.: retrovisor quebrado"
+                          invalid={state.field === "depositDiscountReason"}
+                        />
+                      )}
+                    </div>
+                  </div>
                   <Line
                     strong
                     label="A devolver"
@@ -257,24 +270,31 @@ export function EndRentalDialog({
                   />
                 </div>
               )}
-
-              {state.error && (
-                <p className="text-xs text-destructive">{state.error}</p>
-              )}
             </div>
 
-            <DialogFooter className="mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                onClick={() => setAberto(false)}
+            {/* A recusa fica no rodapé, junto do botão que a provocou: no fim
+                do miolo ela nasceria fora da área visível, e o gestor veria um
+                formulário que não envia sem nenhum recado na tela. */}
+            <DialogFooter className="mx-0 mb-0 shrink-0 flex-col items-center gap-3 px-6 py-4 sm:flex-row sm:justify-between">
+              <p
+                role="alert"
+                className="text-xs text-destructive empty:hidden sm:mr-4"
               >
-                Cancelar
-              </Button>
-              <Button type="submit" size="lg" disabled={pending}>
-                Encerrar locação
-              </Button>
+                {state.error}
+              </p>
+              <span className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setAberto(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" size="lg" disabled={pending}>
+                  Encerrar locação
+                </Button>
+              </span>
             </DialogFooter>
           </form>
         </DialogContent>
