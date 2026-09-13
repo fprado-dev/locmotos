@@ -33,6 +33,15 @@ export type Renter = {
   createdAt: string;
   /** A restrição em vigor, quando há uma. */
   restriction: Restriction | null;
+  /**
+   * A locação ativa, quando há uma.
+   *
+   * Só a placa e o id: é o que a lista mostra na coluna "Locação atual" e o
+   * que o painel precisa para chegar à locação. O acordo inteiro — valor
+   * semanal, início, fidelidade, caução — é do módulo de Locações, e quem
+   * quiser lê de lá.
+   */
+  rental: { id: string; plate: string | null } | null;
 };
 
 /**
@@ -61,23 +70,34 @@ type RenterRow = {
     created_by_name: string;
     created_at: string;
   }[];
+  rentals: { id: string; vehicles: { plate: string } | null }[];
 };
 
 /**
  * As colunas de uma leitura de locatário.
  *
- * A restrição vem embutida e filtrada pela vigência — o `is("restrictions
- * .lifted_at", null)` de cada consulta. Com `!inner` ela deixa de ser enfeite
- * e passa a recortar: só volta quem está restrito, que é o chip da tela.
+ * A restrição e a locação vêm embutidas e filtradas pela vigência — o
+ * `is("restrictions.lifted_at", null)` e o `is("rentals.ended_on", null)` de
+ * cada consulta. Com `!inner` a embutida deixa de ser enfeite e passa a
+ * recortar: só volta quem está restrito, ou quem tem locação, que são chips da
+ * tela. O `!left` explícito da locação é o que deixa `filtered` pedir a
+ * ausência dela, para o chip "Sem locação".
  */
-function columns(restrictedOnly = false): string {
-  const junção = restrictedOnly ? "!inner" : "";
-  return `*, tenants(name), restrictions${junção}(id, reason, created_by_name, created_at)`;
+function columns(situation?: RenterSituation): string {
+  const restritos = situation === "restricted" ? "!inner" : "";
+  const comLocação = situation === "with-rental" ? "!inner" : "!left";
+
+  return (
+    `*, tenants(name), ` +
+    `restrictions${restritos}(id, reason, created_by_name, created_at), ` +
+    `rentals${comLocação}(id, vehicles(plate))`
+  );
 }
 
 // Quem chama o módulo fala o vocabulário do domínio, não o do banco.
 function toRenter(row: RenterRow): Renter {
   const [restriction] = row.restrictions ?? [];
+  const [rental] = row.rentals ?? [];
 
   return {
     id: row.id,
@@ -97,6 +117,9 @@ function toRenter(row: RenterRow): Renter {
           by: restriction.created_by_name,
           at: restriction.created_at,
         }
+      : null,
+    rental: rental
+      ? { id: rental.id, plate: rental.vehicles?.plate ?? null }
       : null,
   };
 }
@@ -182,6 +205,7 @@ export async function updateRenter(
     .is("deleted_at", null)
     .select(columns())
     .is("restrictions.lifted_at", null)
+    .is("rentals.ended_on", null)
     .maybeSingle();
 
   if (error) throw toDomainError(error, row.cpf);
@@ -204,6 +228,7 @@ export async function findRenter(
     .eq("id", id)
     .is("deleted_at", null)
     .is("restrictions.lifted_at", null)
+    .is("rentals.ended_on", null)
     .maybeSingle();
 
   if (error) throw error;
@@ -214,12 +239,14 @@ export async function findRenter(
 export const RENTERS_PER_PAGE = 20;
 
 /**
- * O recorte que os chips da tela oferecem.
+ * O recorte que os chips da tela oferecem, na ordem em que aparecem.
  *
- * São os três que podem ser verdade hoje. "Com locação" e "Sem locação", que o
- * desenho pede, dependem do módulo de Locações e entram quando ele existir.
+ * Locação primeiro: é a pergunta que o gestor faz mais vezes por dia — quem
+ * está com moto na rua e quem está livre para pegar uma.
  */
 export const RENTER_SITUATIONS = [
+  "with-rental",
+  "without-rental",
   "restricted",
   "cnh-overdue",
   "cnh-due-soon",
@@ -394,6 +421,7 @@ type Filterable = {
   lt: (column: string, value: string) => Filterable;
   gte: (column: string, value: string) => Filterable;
   lte: (column: string, value: string) => Filterable;
+  is: (column: string, value: null) => Filterable;
 };
 
 function filtered<T extends Filterable>(
@@ -419,7 +447,12 @@ function filtered<T extends Filterable>(
         .gte("cnh_due_date", hoje)
         .lte("cnh_due_date", isoDay(today, CNH_WARNING_DAYS));
     }
-    // "restricted" não é condição: é o `!inner` da restrição embutida.
+    // Ausência de locação: a embutida já veio recortada pela vigência, e
+    // pedi-la nula é o que sobra de quem não tem nenhuma aberta. "restricted" e
+    // "with-rental" não são condição — são o `!inner` da própria embutida.
+    if (filters.situation === "without-rental") {
+      atual = atual.is("rentals", null);
+    }
   }
 
   return atual as T;
@@ -439,8 +472,6 @@ export async function listRenters(
   filters: RenterFilters = {},
   today = new Date(),
 ): Promise<{ renters: Renter[]; hasMore: boolean; total: number }> {
-  const restritos = filters.situation === "restricted";
-
   // O mesmo recorte responde às duas perguntas da tela: quem entra nesta
   // página, e quantos passaram pelo filtro.
   function scoped(count?: { count: "exact"; head: true }) {
@@ -449,9 +480,10 @@ export async function listRenters(
     // para dar a baixa.
     const query = client
       .from("renters")
-      .select(columns(restritos), count)
+      .select(columns(filters.situation), count)
       .is("deleted_at", null)
-      .is("restrictions.lifted_at", null);
+      .is("restrictions.lifted_at", null)
+      .is("rentals.ended_on", null);
 
     return filtered(query, filters, { today });
   }
@@ -517,9 +549,10 @@ export async function renterCounts(
 ): Promise<RenterCounts> {
   const query = client
     .from("renters")
-    .select("cnh_due_date, restrictions(id)")
+    .select("cnh_due_date, restrictions(id), rentals(id)")
     .is("deleted_at", null)
-    .is("restrictions.lifted_at", null);
+    .is("restrictions.lifted_at", null)
+    .is("rentals.ended_on", null);
 
   const { data, error } = await filtered(query, filters, {
     skipSituation: true,
@@ -530,17 +563,22 @@ export async function renterCounts(
 
   const rows = data as unknown as Pick<
     RenterRow,
-    "cnh_due_date" | "restrictions"
+    "cnh_due_date" | "restrictions" | "rentals"
   >[];
 
   const counts: RenterCounts = {
     all: rows.length,
+    "with-rental": 0,
+    "without-rental": 0,
     restricted: 0,
     "cnh-overdue": 0,
     "cnh-due-soon": 0,
   };
 
   for (const row of rows) {
+    if (row.rentals?.length) counts["with-rental"] += 1;
+    else counts["without-rental"] += 1;
+
     if (row.restrictions?.length) counts.restricted += 1;
 
     const alert = cnhAlert(row.cnh_due_date, today);
@@ -564,6 +602,7 @@ export async function rentersByIds(
     .in("id", ids)
     .is("deleted_at", null)
     .is("restrictions.lifted_at", null)
+    .is("rentals.ended_on", null)
     .order("name", { ascending: true });
 
   if (error) throw error;
@@ -663,7 +702,8 @@ export async function removeRenters(
     .in("id", ids)
     .is("deleted_at", null)
     .select(columns())
-    .is("restrictions.lifted_at", null);
+    .is("restrictions.lifted_at", null)
+    .is("rentals.ended_on", null);
 
   if (error) throw error;
   return (data as unknown as RenterRow[]).map(toRenter);

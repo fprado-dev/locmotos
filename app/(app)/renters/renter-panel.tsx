@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { formatDay, formatFullDate, initials } from "@/app/ui";
-import { Badge } from "@/components/ui/badge";
+import { formatDay, formatFullDate, formatInteger, initials } from "@/app/ui";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -13,15 +13,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { cn } from "@/lib/utils";
-import {
-  cnhAlert,
-  daysUntilCnh,
-  formatCpf,
-  formatWhatsapp,
-  type Renter,
-} from "@/modules/renters";
+import type { AvailableVehicle } from "@/modules/fleet";
+import type { Rental } from "@/modules/rentals";
+import { formatCpf, formatWhatsapp, type Renter } from "@/modules/renters";
 import { liftRenterRestriction } from "./actions";
+import { CnhBadge } from "./cnh-badge";
+import { NewRentalSheet } from "./new-rental-sheet";
 import { RenterForm } from "./renter-form";
 
 /** Um título de seção do painel. */
@@ -59,47 +56,27 @@ function Datum({
 }
 
 /**
- * O que o painel precisa dizer sobre a CNH.
- *
- * Vencida em vermelho, vencendo em âmbar — e a cor não carrega a informação
- * sozinha: o texto diz qual é qual, e quantos dias.
- */
-export function CnhBadge({ dueDate }: { dueDate: string | null }) {
-  const alert = cnhAlert(dueDate);
-  if (!alert || !dueDate) return null;
-
-  const days = daysUntilCnh(dueDate);
-
-  return (
-    <Badge
-      className={cn(
-        "h-auto rounded-md px-[9px] py-1 text-xs",
-        alert === "overdue"
-          ? "bg-late font-semibold text-white"
-          : "bg-soon-bg font-medium text-soon-fg",
-      )}
-    >
-      {alert === "overdue" ? `Vencida há ${-days} d` : `Vence em ${days} d`}
-    </Badge>
-  );
-}
-
-/**
  * O detalhe de um locatário, num painel à direita.
  *
  * Quem abre e fecha é a URL (`?open=<id>`), e não um estado de cliente: o
  * painel volta igual num recarregamento, pode ser mandado para um colega e
  * fecha no botão voltar. O que a tela busca já veio do servidor com a lista.
  *
- * O bloco de Locação atual está desenhado e vazio de propósito. Ele não é
- * improviso: o módulo de Locações ainda não existe, e o lugar dele fica
- * marcado para quem chegar depois encaixar em vez de redesenhar.
+ * A locação atual e a lista de motos disponíveis vêm prontas do servidor, com
+ * a pessoa: abrir o painel não pode custar uma segunda volta, e o formulário
+ * de nova locação precisa das duas coisas no instante em que abre.
  */
 export function RenterPanel({
   renter,
+  rental,
+  vehicles,
   closeHref,
 }: {
   renter: Renter;
+  /** A locação ativa, quando há uma. */
+  rental: Rental | null;
+  /** As motos livres para uma locação nova. */
+  vehicles: AvailableVehicle[];
   closeHref: string;
 }) {
   const router = useRouter();
@@ -219,9 +196,60 @@ export function RenterPanel({
               )}
 
               <Section title="Locação atual">
-                <p className="rounded-lg border border-dashed border-input px-4 py-6 text-center text-[13px] text-muted-foreground">
-                  Sem locação no momento.
-                </p>
+                {rental ? (
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <div className="flex items-center gap-2.5 border-b border-border bg-surface-2 px-4 py-2.5">
+                      <span className="font-mono text-[13px] font-medium tracking-[0.02em]">
+                        {rental.vehicle?.plate ?? "—"}
+                      </span>
+                      <span className="truncate text-[13px] text-muted-foreground">
+                        {rental.vehicle
+                          ? `${rental.vehicle.brand} ${rental.vehicle.model}`
+                          : ""}
+                      </span>
+                      {/* A moto está a um clique: é dela que vêm quilometragem,
+                          licenciamento e documentos. */}
+                      <Link
+                        href={`/fleet/${rental.vehicleId}`}
+                        className="ml-auto shrink-0 rounded-sm text-xs text-brand-text hover:underline"
+                      >
+                        Ver moto
+                      </Link>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3 px-4 py-3">
+                      <Datum label="Semana">
+                        <span className="tabular-nums">
+                          R$ {formatInteger(rental.weeklyPrice)}
+                        </span>
+                      </Datum>
+                      <Datum label="Início">
+                        {formatDay(rental.startedOn)}
+                      </Datum>
+                      <Datum label="Fidelidade">
+                        {rental.commitmentMonths ? (
+                          `${rental.commitmentMonths} ${rental.commitmentMonths === 1 ? "mês" : "meses"}`
+                        ) : (
+                          <span className="text-subtle">—</span>
+                        )}
+                      </Datum>
+                    </div>
+
+                    {rental.deposit !== null && (
+                      <div className="border-t border-border px-4 py-3">
+                        <Datum label="Caução">
+                          <span className="tabular-nums">
+                            R$ {formatInteger(rental.deposit)}
+                          </span>
+                        </Datum>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-dashed border-input px-4 py-6 text-center text-[13px] text-muted-foreground">
+                    Sem locação no momento.
+                  </p>
+                )}
               </Section>
             </div>
 
@@ -234,21 +262,25 @@ export function RenterPanel({
                 Editar cadastro
               </Button>
               {/*
-                O botão existe desabilitado, e não escondido, porque o desenho
-                promete este caminho: o gestor precisa saber que ele vem, e que
-                a restrição é o que o fecha quando ela existir.
+                Quem tem restrição, ou já está com uma moto, vê o botão
+                desabilitado com o motivo — e não o botão escondido: o caminho
+                existe, e saber por que ele está fechado é parte da resposta.
               */}
-              <Button
-                size="lg"
-                disabled
-                title={
-                  restriction
-                    ? "Locatário com restrição não abre nova locação."
-                    : "Disponível quando o módulo de Locações existir."
-                }
-              >
-                Nova locação
-              </Button>
+              {restriction || rental ? (
+                <Button
+                  size="lg"
+                  disabled
+                  title={
+                    restriction
+                      ? "Locatário com restrição não abre nova locação."
+                      : "Já está com uma moto. Encerre a locação atual primeiro."
+                  }
+                >
+                  Nova locação
+                </Button>
+              ) : (
+                <NewRentalSheet renter={renter} vehicles={vehicles} />
+              )}
             </div>
           </>
         )}

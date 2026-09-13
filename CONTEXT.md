@@ -57,6 +57,11 @@ Encerramento de uma locação antes do fim da fidelidade.
 _Código_: `earlyTermination`
 _Evitar_: cancelamento, quebra de contrato
 
+**Valor semanal**:
+O que o locatário paga por semana de locação. A moto tem o dela na tabela de preços; a locação copia esse valor na abertura e passa a tê-lo como seu. Mudar a tabela de preços da frota não mexe em acordo já feito.
+_Código_: `weeklyPrice`
+_Evitar_: mensalidade, diária, tarifa
+
 **Caução**:
 Valor retido no início da locação e devolvido no encerramento, descontadas avarias e débitos em aberto.
 _Código_: `deposit`
@@ -116,12 +121,12 @@ _Código_: `deletedAt`, `removeVehicle`, `removeRenter`
 _Evitar_: exclusão, delete, arquivar, inativar
 
 **Situação**:
-Em que estado de operação um veículo está: disponível, reservada, em manutenção ou indisponível. Na v1 quem define é o gestor, na mão.
+Em que estado de operação um veículo está: disponível, reservada, em manutenção ou indisponível. **Reservada** significa "tem locação ativa" e é derivada na leitura — não se escolhe, acontece ao abrir uma locação e passa ao encerrá-la. As outras três são decisão do gestor, na mão.
 _Código_: `VehicleStatus`
 _Evitar_: estado, disponibilidade, condição
 
 **Dias sem locação**:
-Há quantos dias um veículo está parado. Calculado na leitura, nunca guardado. Enquanto não existe **Locação**, conta a partir da data de cadastro — moto que nunca foi alugada está parada desde que entrou na frota.
+Há quantos dias um veículo está parado. Calculado na leitura, nunca guardado. Conta a partir da data de cadastro — moto que nunca foi alugada está parada desde que entrou na frota. Passa a contar da última devolução quando o **encerramento** de locação existir, e só o argumento muda.
 _Código_: `daysWithoutRental`
 _Evitar_: ociosidade, dias parado, idle
 

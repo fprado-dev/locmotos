@@ -19,13 +19,13 @@ import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { VEHICLE_STATUSES, type VehicleStatus } from "@/modules/fleet";
+import type { VehicleStatus } from "@/modules/fleet";
 import { useSelection } from "../selection";
 import { changeVehiclesStatus, discardVehicles } from "./actions";
+import { StatusOptions } from "./status-options";
 
 /**
  * O lote da frota: mudar situação de todas, ou dar baixa em todas.
@@ -43,8 +43,8 @@ export function BatchBar() {
    * Conta ao gestor o que aconteceu de fato, não o que ele pediu.
    *
    * Quando voltam menos do que foram, o que ficou de fora não era da locadora
-   * dele — a RLS não devolve erro, devolve silêncio, e sem essa frase o
-   * silêncio passaria por sucesso.
+   * dele, ou está em locação ativa — a RLS não devolve erro, devolve silêncio,
+   * e sem essa frase o silêncio passaria por sucesso.
    */
   function relatar(
     { error, changed = 0 }: { error?: string; changed?: number },
@@ -59,7 +59,7 @@ export function BatchBar() {
     toast.success(
       changed === ids.length
         ? `${changed} moto${changed === 1 ? "" : "s"} ${feito}.`
-        : `${changed} de ${ids.length} ${feito}. O resto não é desta locadora.`,
+        : `${changed} de ${ids.length} ${feito}. O resto está em locação ou não é desta locadora.`,
     );
   }
 
@@ -92,11 +92,7 @@ export function BatchBar() {
           <SelectValue placeholder="Escolher…" />
         </SelectTrigger>
         <SelectContent>
-          {VEHICLE_STATUSES.map((valor) => (
-            <SelectItem key={valor} value={valor}>
-              {STATUS_LABELS[valor]}
-            </SelectItem>
-          ))}
+          <StatusOptions />
         </SelectContent>
       </Select>
 

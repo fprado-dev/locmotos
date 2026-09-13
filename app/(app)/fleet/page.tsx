@@ -299,16 +299,28 @@ function VehicleRow({
       </TableCell>
 
       <TableCell className={cn(CELL, "text-right")}>
-        {/* Passou de um ciclo de cobrança parada, a linha precisa saltar. */}
-        <span
-          className={cn(
-            stopped > LONG_STOP_DAYS
-              ? "rounded-md bg-chip px-2 py-[3px] font-semibold text-foreground"
-              : "text-muted-foreground",
-          )}
-        >
-          {stopped} d
-        </span>
+        {/*
+          Moto alugada não está parada. Enquanto a data da última devolução não
+          existir — ela nasce com o encerramento de locação —, o contador conta
+          desde o cadastro, e para quem está na rua isso seria mentira. Um
+          traço diz menos e não engana.
+        */}
+        {vehicle.status === "reserved" ? (
+          <span className="text-subtle" title="Em locação">
+            —
+          </span>
+        ) : (
+          /* Passou de um ciclo de cobrança parada, a linha precisa saltar. */
+          <span
+            className={cn(
+              stopped > LONG_STOP_DAYS
+                ? "rounded-md bg-chip px-2 py-[3px] font-semibold text-foreground"
+                : "text-muted-foreground",
+            )}
+          >
+            {stopped} d
+          </span>
+        )}
       </TableCell>
 
       <TableCell className={cn(CELL, "pr-[18px]")}>
