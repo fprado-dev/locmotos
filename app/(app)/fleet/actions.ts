@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { formatDay } from "@/app/ui";
 import {
   MAX_AMOUNT,
   optionalField,
@@ -23,6 +24,7 @@ import {
   type NewVehicle,
   type VehicleStatus,
 } from "@/modules/fleet";
+import { activeRentalForVehicle } from "@/modules/rentals";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -282,7 +284,11 @@ export async function discardVehicles(ids: string[]): Promise<BatchState> {
     const client = await createClient();
     changed = (await removeVehicles(client, vehicleIds(ids))).length;
 
-    if (changed === 0) throw new UserError("Nenhum veículo foi removido.");
+    if (changed === 0) {
+      throw new UserError(
+        "Nenhuma moto foi removida. As que você marcou estão em locação ativa — encerre a locação antes de dar baixa.",
+      );
+    }
   } catch (error) {
     const recado = userError(error);
     if (recado) return recado;
@@ -329,18 +335,31 @@ export async function editVehicle(
   redirect("/fleet");
 }
 
-/** Dá baixa num veículo: ele sai da lista e a linha fica no banco. */
+/**
+ * Dá baixa num veículo: ele sai da lista e a linha fica no banco.
+ *
+ * A recusa de moto alugada é do módulo, e vale para todo mundo. O que acontece
+ * aqui é o **recado**: "não foi possível dar baixa" não ajuda ninguém — o
+ * gestor precisa saber quem está com a moto e o que fazer. Esta é a única
+ * camada que pode perguntar às duas coisas: Frota não importa Locações, e o
+ * `dependency-cruiser` é quem garante isso.
+ */
 export async function discardVehicle(
   _state: FormState,
   formData: FormData,
 ): Promise<FormState> {
   try {
     const client = await createClient();
-    const removed = await removeVehicle(
-      client,
-      requiredField(formData, "id", "Veículo"),
-    );
+    const id = requiredField(formData, "id", "Veículo");
 
+    const ocupando = await activeRentalForVehicle(client, id);
+    if (ocupando) {
+      throw new UserError(
+        `A ${ocupando.vehicle.plate} está com ${ocupando.renterName} desde ${formatDay(ocupando.startedOn)}. Encerre a locação antes de dar baixa.`,
+      );
+    }
+
+    const removed = await removeVehicle(client, id);
     if (!removed) throw new UserError("Veículo não encontrado.");
   } catch (error) {
     const recado = userError(error);

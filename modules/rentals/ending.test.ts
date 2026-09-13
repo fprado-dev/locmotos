@@ -1,7 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isoDay } from "@/lib/calendar";
-import { createVehicle, daysWithoutRental, findVehicle } from "@/modules/fleet";
+import {
+  createVehicle,
+  daysWithoutRental,
+  findVehicle,
+  removeVehicle,
+  removeVehicles,
+} from "@/modules/fleet";
 import { createRenter } from "@/modules/renters";
 import {
   createAdminClient,
@@ -138,10 +144,13 @@ describe("o corte da fidelidade", () => {
 });
 
 /** A locadora que os dois blocos de banco dividem — cada login tem cota. */
-const compartilhado: { client: SupabaseClient; rentalId: string } = {
-  client: null!,
-  rentalId: "",
-};
+const compartilhado: {
+  client: SupabaseClient;
+  rentalId: string;
+  /** A locação que a moto liberada recebeu — a baixa esbarra nela. */
+  novaId: string;
+  vehicleId: string;
+} = { client: null!, rentalId: "", novaId: "", vehicleId: "" };
 
 describe("encerrar locação", () => {
   let gestor: SupabaseClient;
@@ -166,6 +175,7 @@ describe("encerrar locação", () => {
     ]);
 
     motoId = moto.id;
+    compartilhado.vehicleId = moto.id;
     locatáriaId = locatária.id;
 
     const locação = await openRental(gestor, {
@@ -288,7 +298,57 @@ describe("encerrar locação", () => {
       weeklyPrice: 300,
     });
 
+    compartilhado.novaId = nova.id;
     expect(nova).toMatchObject({ vehicleId: motoId, endedOn: null });
+  });
+});
+
+/**
+ * A baixa é da Frota, mas a regra só existe porque Locações existe: uma moto
+ * que está na rua com alguém volta antes de sair da frota. O cenário já está
+ * montado aqui — a moto do bloco de cima acabou de entrar numa locação nova —,
+ * e cada locadora nova custa um login no Auth do projeto (`docs/adr/0006`).
+ */
+describe("baixa de moto alugada", () => {
+  let gestor: SupabaseClient;
+
+  beforeAll(() => {
+    gestor = compartilhado.client;
+  });
+
+  it("é recusada enquanto a locação está de pé", async () => {
+    expect(await removeVehicle(gestor, compartilhado.vehicleId)).toBeNull();
+
+    // E a moto continua na frota, não numa baixa pela metade.
+    expect(await findVehicle(gestor, compartilhado.vehicleId)).toMatchObject({
+      status: "reserved",
+    });
+  });
+
+  it("no lote, a alugada fica de fora e as outras passam", async () => {
+    const livre = await createVehicle(gestor, {
+      plate: plate(),
+      brand: "Yamaha",
+      model: "Factor 150",
+      year: 2023,
+      weeklyPrice: 280,
+    });
+
+    const baixadas = await removeVehicles(gestor, [
+      compartilhado.vehicleId,
+      livre.id,
+    ]);
+
+    expect(baixadas.map((moto) => moto.id)).toEqual([livre.id]);
+  });
+
+  it("encerrada a locação, a baixa passa", async () => {
+    await endRental(gestor, compartilhado.novaId);
+
+    expect(await removeVehicle(gestor, compartilhado.vehicleId)).toMatchObject({
+      id: compartilhado.vehicleId,
+    });
+    expect(await findVehicle(gestor, compartilhado.vehicleId)).toBeNull();
   });
 });
 
