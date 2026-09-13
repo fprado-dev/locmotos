@@ -13,5 +13,9 @@ export default defineConfig({
     // Testes tocam um Postgres real e compartilhado; em paralelo eles brigam.
     fileParallelism: false,
     testTimeout: 30_000,
+    // O mesmo motivo vale para os `beforeAll`: provisionar uma locadora é
+    // inserir a linha, criar o usuário e fazer login — três idas a um Supabase
+    // remoto. Os 10s do padrão são de teste que roda na máquina.
+    hookTimeout: 30_000,
   },
 });
