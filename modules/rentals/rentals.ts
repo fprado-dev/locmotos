@@ -8,6 +8,7 @@ import {
 import { UserError } from "@/lib/user-error";
 import { findVehicle, type VehicleStatus } from "@/modules/fleet";
 import { settleLastCycle } from "./charges";
+import { recordInspection, type InspectionInput } from "./inspections";
 import { findRenter } from "@/modules/renters";
 
 /**
@@ -446,6 +447,14 @@ export type Ending = {
   depositDiscountReason?: string | null;
   /** O que foi cobrado pela rescisão. Digitado, nunca calculado. */
   earlyTerminationFee?: number | null;
+  /**
+   * A vistoria de devolução, se o gestor conferiu a moto.
+   *
+   * Opcional como a vistoria inteira é opcional (issue #47): a maioria das
+   * devoluções não vai ter uma, e exigi-la faria o encerramento parar por uma
+   * anotação que ninguém tem.
+   */
+  inspection?: InspectionInput;
 };
 
 /**
@@ -524,6 +533,17 @@ export async function endRental(
   }
 
   const fidelidade = commitmentAt(atual, endedOn);
+
+  // Antes do `update` porque vistoria também tem recusa — odômetro menor que o
+  // da entrega —, e uma recusa depois de encerrar chegaria tarde demais: a
+  // locação já estaria fechada quando o recado aparecesse.
+  //
+  // Se o `update` abaixo perder a corrida, a vistoria já gravada continua
+  // válida: quem ganhou encerrou a mesma locação, e a moto voltou do mesmo
+  // jeito.
+  if (ending.inspection) {
+    await recordInspection(client, id, "return", ending.inspection);
+  }
 
   const { data, error } = await client
     .from(WRITE)

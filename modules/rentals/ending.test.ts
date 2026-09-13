@@ -19,11 +19,14 @@ import {
   endRental,
   findRental,
   generateCharges,
+  kilometersRun,
   openRental,
   overdueCharges,
   payCharge,
+  recordInspection,
   rentalCounts,
   rentalHistory,
+  rentalInspections,
   rentalWeeks,
 } from "./index";
 
@@ -502,5 +505,180 @@ describe("rateio da última semana", () => {
     // E rodar de novo não cria a semana cheia por cima nem duplica a parcial.
     expect(await generateCharges(gestor)).toBe(0);
     expect(await ciclos(id)).toHaveLength(1);
+  });
+});
+
+/**
+ * A vistoria (issue #47).
+ *
+ * Reusa o gestor dos blocos de cima: cada locadora nova custa um login no Auth
+ * do projeto (`docs/adr/0006`).
+ */
+describe("vistoria", () => {
+  let gestor: SupabaseClient;
+  let hoje: string;
+
+  beforeAll(async () => {
+    gestor = compartilhado.client;
+    hoje = await hojeNoBanco(gestor);
+  });
+
+  /** Uma locação nova, com moto e locatário só dela. */
+  async function locação(cpf: string): Promise<string> {
+    const [moto, pessoa] = await Promise.all([
+      createVehicle(gestor, {
+        plate: plate(),
+        brand: "Honda",
+        model: "Pop 110",
+        year: 2023,
+        weeklyPrice: 210,
+      }),
+      createRenter(gestor, { name: "Locatário da vistoria", cpf }),
+    ]);
+
+    const nova = await openRental(gestor, {
+      vehicleId: moto.id,
+      renterId: pessoa.id,
+      weeklyPrice: 210,
+      startedOn: diasAntes(hoje, 8),
+    });
+
+    return nova.id;
+  }
+
+  it("vistoria em branco não grava linha nenhuma", async () => {
+    const id = await locação("516.879.548-01");
+
+    expect(
+      await recordInspection(gestor, id, "handover", { by: "Gestor" }),
+    ).toBeNull();
+
+    expect(await rentalInspections(gestor, id)).toEqual({
+      handover: null,
+      return: null,
+    });
+  });
+
+  it("só avaria já é vistoria: os três campos são independentes", async () => {
+    const id = await locação("669.060.104-84");
+
+    const vistoria = await recordInspection(gestor, id, "handover", {
+      damages: "  Risco na carenagem direita  ",
+      by: "Gestor",
+    });
+
+    expect(vistoria).toMatchObject({
+      moment: "handover",
+      odometer: null,
+      fuel: null,
+      // O espaço em volta não entra: o que fica é o que se lê.
+      damages: "Risco na carenagem direita",
+      by: "Gestor",
+    });
+  });
+
+  it("registrar de novo corrige a que existe, e não cria uma segunda", async () => {
+    const id = await locação("780.596.338-05");
+
+    await recordInspection(gestor, id, "handover", {
+      odometer: 12300,
+      fuel: 2,
+      by: "Gestor",
+    });
+    await recordInspection(gestor, id, "handover", {
+      odometer: 12400,
+      fuel: 2,
+      by: "Quem conferiu depois",
+    });
+
+    const { handover } = await rentalInspections(gestor, id);
+    expect(handover).toMatchObject({
+      odometer: 12400,
+      by: "Quem conferiu depois",
+    });
+
+    // Uma entrega, não duas contando histórias diferentes.
+    const { count } = await gestor
+      .from("inspections")
+      .select("id", { count: "exact", head: true })
+      .eq("rental_id", id);
+    expect(count).toBe(1);
+  });
+
+  it("odômetro da devolução menor que o da entrega é recusado", async () => {
+    const id = await locação("857.308.559-23");
+    await recordInspection(gestor, id, "handover", {
+      odometer: 12400,
+      by: "Gestor",
+    });
+
+    await expect(
+      endRental(gestor, id, {
+        inspection: { odometer: 12399, by: "Gestor" },
+      }),
+    ).rejects.toThrow(/saiu com 12\.400 km/);
+
+    // E a locação continua de pé: a recusa vem antes de encerrar.
+    expect(await findRental(gestor, id)).toMatchObject({ endedOn: null });
+  });
+
+  it("encerrar com vistoria grava a devolução, e a rodagem é a subtração", async () => {
+    const id = await locação("589.330.251-62");
+    await recordInspection(gestor, id, "handover", {
+      odometer: 12400,
+      fuel: 4,
+      by: "Gestor",
+    });
+
+    await endRental(gestor, id, {
+      inspection: {
+        odometer: 13600,
+        fuel: 1,
+        damages: "Retrovisor esquerdo folgado",
+        by: "Gestor",
+      },
+    });
+
+    const vistorias = await rentalInspections(gestor, id);
+    expect(vistorias.return).toMatchObject({
+      moment: "return",
+      odometer: 13600,
+      fuel: 1,
+      damages: "Retrovisor esquerdo folgado",
+    });
+    expect(kilometersRun(vistorias)).toBe(1200);
+  });
+
+  it("sem odômetro nas duas pontas não existe rodagem", async () => {
+    const id = await locação("596.884.135-42");
+    await recordInspection(gestor, id, "handover", { fuel: 4, by: "Gestor" });
+    await endRental(gestor, id, {
+      inspection: { odometer: 13600, by: "Gestor" },
+    });
+
+    expect(kilometersRun(await rentalInspections(gestor, id))).toBeNull();
+  });
+
+  it("encerrar sem vistoria continua sendo o caso comum", async () => {
+    const id = await locação("371.695.438-18");
+    await endRental(gestor, id);
+
+    expect(await rentalInspections(gestor, id)).toEqual({
+      handover: null,
+      return: null,
+    });
+  });
+});
+
+describe("isolamento das vistorias", () => {
+  it("vistoria de locação de outra locadora não é registrada", async () => {
+    const outra = await createManager();
+
+    await expect(
+      recordInspection(outra, compartilhado.rentalId, "handover", {
+        odometer: 999,
+        by: "Vizinha",
+      }),
+    ).rejects.toThrow(/não encontrada/i);
   });
 });

@@ -16,8 +16,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { isoDay } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
-import { commitmentAt, delinquency, type Rental } from "@/modules/rentals";
+import {
+  commitmentAt,
+  delinquency,
+  type Inspection,
+  type Rental,
+} from "@/modules/rentals";
 import { closeRental } from "./actions";
+import { FUEL_LABELS, InspectionFields } from "./inspection";
 
 /** Um campo do formulário, com rótulo em cima. */
 function Field({
@@ -82,7 +88,14 @@ function Line({
  * para o gestor digitar o que cobrou; inventar o número aqui seria pior que
  * deixá-lo em branco.
  */
-export function EndRentalDialog({ rental }: { rental: Rental }) {
+export function EndRentalDialog({
+  rental,
+  handover,
+}: {
+  rental: Rental;
+  /** A vistoria de entrega, quando existe: é contra ela que se compara. */
+  handover: Inspection | null;
+}) {
   const [aberto, setAberto] = useState(false);
   const hoje = isoDay(new Date());
 
@@ -177,6 +190,34 @@ export function EndRentalDialog({ rental }: { rental: Rental }) {
                   que está em aberto.
                 </p>
               )}
+
+              <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+                <span className="text-[13px] font-semibold">
+                  Vistoria de devolução{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (opcional)
+                  </span>
+                </span>
+
+                {/* A da entrega fica à vista: a de devolução só quer dizer
+                    alguma coisa comparada com ela, e o gestor está com a moto
+                    na frente, não com o painel aberto em outra aba. */}
+                {handover && (
+                  <p className="text-[13px] text-muted-foreground">
+                    A moto saiu com{" "}
+                    {handover.odometer === null
+                      ? "quilometragem não anotada"
+                      : `${handover.odometer.toLocaleString("pt-BR")} km`}
+                    {handover.fuel !== null &&
+                      `, tanque ${FUEL_LABELS[handover.fuel].toLowerCase()}`}
+                    .
+                    {handover.damages &&
+                      ` Avarias na entrega: ${handover.damages}`}
+                  </p>
+                )}
+
+                <InspectionFields invalid={state.field} />
+              </div>
 
               {rental.deposit === null ? (
                 <p className="text-[13px] text-muted-foreground">
