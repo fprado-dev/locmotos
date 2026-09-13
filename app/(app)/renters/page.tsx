@@ -271,7 +271,16 @@ function RenterRow({
 
       <TableCell className={CELL}>
         {renter.rental?.plate ? (
-          <span className="font-mono text-[12.5px]">{renter.rental.plate}</span>
+          /*
+            Link de verdade, e acima do link da linha (`relative z-10`):
+            clicar na placa abre a locação, não o painel do locatário.
+          */
+          <Link
+            href={`/rentals?open=${renter.rental.id}`}
+            className="relative z-10 rounded-sm font-mono text-[12.5px] hover:underline"
+          >
+            {renter.rental.plate}
+          </Link>
         ) : (
           <span className="text-subtle">—</span>
         )}
