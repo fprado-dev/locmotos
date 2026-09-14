@@ -1,50 +1,44 @@
 import { NextResponse, type NextRequest } from "next/server";
-import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * Volta do link mágico: troca o que veio na URL por sessão e grava os cookies.
+ * Volta do link mágico.
  *
- * **Dois formatos, porque são duas origens.**
+ * **`code` é o fluxo PKCE** e se resolve aqui: quem pediu o link guardou um
+ * verificador no cookie _deste_ navegador, e só ele fecha a troca. Trocar já é
+ * seguro porque sem o cookie o código não serve para mais ninguém.
  *
- * `code` é o fluxo PKCE: quem pediu o link guardou um verificador no cookie
- * _deste_ navegador, e só ele fecha a troca. É o que o e-mail de login usa, e é
- * o mais seguro dos dois — o código roubado no meio do caminho não serve sem o
- * cookie.
+ * **`token_hash` não se gasta aqui.** Ele vale em qualquer navegador — é essa a
+ * graça dele, e é essa a armadilha: pré-visualizador de mensagem e prefetch
+ * abrem a URL sozinhos, e o link de uso único morre antes de a pessoa clicar.
+ * Então o `GET` só encaminha para `/entrar`, que mostra um botão; quem gasta é
+ * o `POST`. Robô nenhum aperta botão.
  *
- * `token_hash` é o link que nasceu fora deste navegador: gerado pela Admin API,
- * ou aberto no celular depois de pedido no computador. Não depende de cookie
- * nenhum, e é o formato que o Supabase documenta para link de e-mail no App
- * Router.
- *
- * **Link gasto com sessão em pé não é erro.** Cada link serve uma vez só, e
- * clicar de novo — recarregar a aba, voltar no histórico, o scanner do provedor
- * de e-mail ter passado antes — devolvia "esse link não vale mais" para quem já
- * estava logado. Quem já entrou quer a frota, não um aviso sobre o papel que o
- * levou até lá.
+ * **Link gasto com sessão em pé não é erro**: quem chegou aqui logado já passou
+ * por um link que funcionou, e o destino é a frota, não um aviso.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
-  const code = params.get("code");
+  const dentro = NextResponse.redirect(new URL("/fleet", request.url));
+
   const tokenHash = params.get("token_hash");
-  const type = params.get("type") as EmailOtpType | null;
+  const type = params.get("type");
+
+  if (tokenHash && type) {
+    const entrar = new URL("/entrar", request.url);
+    entrar.searchParams.set("token_hash", tokenHash);
+    entrar.searchParams.set("type", type);
+    return NextResponse.redirect(entrar);
+  }
 
   const client = await createClient();
-  const dentro = NextResponse.redirect(new URL("/fleet", request.url));
+  const code = params.get("code");
 
   if (code) {
     const { error } = await client.auth.exchangeCodeForSession(code);
     if (!error) return dentro;
-  } else if (tokenHash && type) {
-    const { error } = await client.auth.verifyOtp({
-      type,
-      token_hash: tokenHash,
-    });
-    if (!error) return dentro;
   }
 
-  // O link não valeu. Se a sessão vale, o destino é o mesmo: quem chegou aqui
-  // logado já passou por um link que funcionou.
   const { data } = await client.auth.getClaims();
   if (data?.claims) return dentro;
 

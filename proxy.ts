@@ -55,7 +55,11 @@ export default async function proxy(request: NextRequest) {
 function isPublic(pathname: string): boolean {
   return (
     pathname === "/" ||
-    ["/login", "/signup", "/auth"].some((route) => pathname.startsWith(route))
+    // `/entrar` é o botão que gasta o link de acesso: quem chega nele ainda
+    // não tem sessão, e é justamente para ganhar uma que está ali.
+    ["/login", "/signup", "/auth", "/entrar"].some((route) =>
+      pathname.startsWith(route),
+    )
   );
 }
 
