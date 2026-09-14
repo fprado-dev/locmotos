@@ -153,7 +153,7 @@ _Código_: `Incident`
 _Evitar_: ocorrência, acidente, evento
 
 **Infração**:
-Multa de trânsito atribuída a um veículo durante uma locação.
+Multa de trânsito atribuída a um veículo durante uma locação. A linha é do **veículo** — é com a placa que a notificação chega —, e traz número do auto (opcional, único por locadora), **data e hora**, o que foi em texto livre, valor e prazo de indicação. **De quem era a moto não é um campo: é uma consulta.** A locação já diz de quando até quando, e a atribuição é resolvida na leitura, em dia de Brasília; gravar o nome junto criaria duas verdades que divergem no dia em que alguém corrigir a data de início de uma locação. Sem locação naquele dia, a infração é da locadora, e a tela diz isso com todas as letras. Data de locação tem granularidade de **dia**, então moto devolvida de manhã e alugada de novo à tarde deixa o dia com dois donos possíveis: aí o sistema **não escolhe** — avisa. Apagar existe, ao contrário de cobrança e pagamento: a linha nasce de um papel digitado à mão, e infração na placa errada é lixo, não história.
 _Código_: `TrafficViolation`
 _Evitar_: multa — ambíguo com a multa por atraso de pagamento
 
