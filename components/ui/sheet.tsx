@@ -7,8 +7,34 @@ import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { XIcon } from "lucide-react";
 
-function Sheet({ ...props }: SheetPrimitive.Root.Props) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
+/**
+ * A raiz da gaveta.
+ *
+ * O `open` passa por um quadro fechado antes de virar verdade, de propósito.
+ * O Base UI não anima o que já nasce aberto — é decisão dele, para um popup
+ * com `defaultOpen` não entrar animado no carregamento da página —, e não há
+ * prop para desligar isso. Só que as nossas gavetas de detalhe nascem abertas:
+ * quem as abre é a URL (`?open=<id>`), então o componente monta com `open`
+ * já verdadeiro e aparecia de uma vez, sem deslizar.
+ *
+ * Nascendo fechada, a abertura vira uma mudança de estado como qualquer
+ * outra, e o `data-starting-style` volta a existir. Gaveta aberta por botão
+ * não muda: ela já nascia fechada.
+ */
+function Sheet({ open, ...props }: SheetPrimitive.Root.Props) {
+  const [montada, setMontada] = React.useState(false);
+  React.useEffect(() => {
+    // Um quadro pintado com a gaveta fechada é justamente o que faltava: sem
+    // ele o navegador vê os dois estados no mesmo quadro e não transiciona.
+    const quadro = requestAnimationFrame(() => setMontada(true));
+    return () => cancelAnimationFrame(quadro);
+  }, []);
+
+  // `undefined && x` continua `undefined`: gaveta sem `open` segue não
+  // controlada, na mão do gatilho.
+  return (
+    <SheetPrimitive.Root data-slot="sheet" open={open && montada} {...props} />
+  );
 }
 
 function SheetTrigger({ ...props }: SheetPrimitive.Trigger.Props) {
