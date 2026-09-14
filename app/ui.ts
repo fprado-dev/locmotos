@@ -1,5 +1,6 @@
-import type { VehicleStatus } from "@/modules/fleet";
+import type { DiscardReason, VehicleStatus } from "@/modules/fleet";
 import type { ExpenseCategory } from "@/modules/finance";
+import type { IncidentKind } from "@/modules/rentals";
 
 /**
  * O nome de cada situação na tela.
@@ -71,6 +72,32 @@ export const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
   fine: "Multa",
   fuel: "Combustível",
   other: "Outros",
+};
+
+/**
+ * O nome de cada tipo de sinistro na tela.
+ *
+ * Furto e roubo aparecem separados porque são coisas diferentes para a
+ * seguradora — e porque o gestor que digita já sabe qual dos dois foi.
+ */
+export const INCIDENT_LABELS: Record<IncidentKind, string> = {
+  damage: "Batida",
+  theft: "Furto",
+  robbery: "Roubo",
+  total_loss: "Perda total",
+};
+
+/**
+ * Por que a moto saiu da frota, em palavras.
+ *
+ * A ficha de uma moto baixada precisa dizer isso: sem o motivo, daqui a um ano
+ * a linha só conta que ela sumiu.
+ */
+export const DISCARD_LABELS: Record<DiscardReason, string> = {
+  sold: "Vendida",
+  total_loss: "Perda total",
+  stolen: "Roubada ou furtada",
+  other: "Outro motivo",
 };
 
 const integer = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });

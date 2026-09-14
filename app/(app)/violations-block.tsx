@@ -26,7 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { violationBlame, type TrafficViolation } from "@/modules/rentals";
+import { whoHadIt, type TrafficViolation } from "@/modules/rentals";
 import { removeViolation, saveViolation } from "./violation-actions";
 
 /** Um campo do formulário, com rótulo em cima. */
@@ -63,7 +63,7 @@ function Field({
  * único caso em que ninguém sabe a resposta.
  */
 function Blame({ violation }: { violation: TrafficViolation }) {
-  const blame = violationBlame(violation);
+  const blame = whoHadIt(violation);
 
   if (blame.kind === "renter") {
     return (

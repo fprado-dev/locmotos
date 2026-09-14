@@ -5,7 +5,8 @@ import { brasiliaDay } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/server";
 import { findVehicle, revisionDefault, signedFileUrl } from "@/modules/fleet";
 import { vehicleMaintenances } from "@/modules/maintenance";
-import { vehicleViolations } from "@/modules/rentals";
+import { vehicleIncidents, vehicleViolations } from "@/modules/rentals";
+import { VehicleIncidents } from "../../incidents-block";
 import { VehicleViolations } from "../../violations-block";
 import { StatusSelect } from "../status-select";
 import { VehicleForm } from "../vehicle-form";
@@ -41,14 +42,17 @@ export default async function VehiclePage({
   const { id } = await params;
 
   const client = await createClient();
-  const vehicle = await findVehicle(client, id);
+  // A ficha é a única tela que abre uma moto com baixa: é onde o motivo
+  // dela fica escrito, e é para onde levam os links antigos.
+  const vehicle = await findVehicle(client, id, { discarded: true });
   // Veículo de outra locadora chega aqui como inexistente: a RLS filtrou
   // antes, e a tela não distingue os dois casos de propósito.
   if (!vehicle) notFound();
 
-  const [violations, maintenances, intervalo] = await Promise.all([
+  const [violations, maintenances, incidents, intervalo] = await Promise.all([
     vehicleViolations(client, vehicle.id),
     vehicleMaintenances(client, vehicle.id),
+    vehicleIncidents(client, vehicle.id),
     revisionDefault(client),
   ]);
 
@@ -132,8 +136,30 @@ export default async function VehiclePage({
           />
         </div>
 
+        {/* Sinistro por último entre os históricos: é o que menos acontece, e
+            o que mais muda o destino da moto quando acontece. */}
         <div className="border-t border-border pt-6">
-          <DiscardButton id={vehicle.id} />
+          <VehicleIncidents
+            vehicleId={vehicle.id}
+            plate={vehicle.plate}
+            incidents={incidents}
+            today={brasiliaDay()}
+          />
+        </div>
+
+        <div className="border-t border-border pt-6">
+          <DiscardButton
+            id={vehicle.id}
+            discarded={
+              vehicle.discardedAt
+                ? {
+                    at: vehicle.discardedAt,
+                    reason: vehicle.discardReason,
+                    incidentId: vehicle.discardIncidentId,
+                  }
+                : null
+            }
+          />
         </div>
       </div>
     </>

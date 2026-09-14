@@ -26,6 +26,7 @@ import {
   activeRentalForRenter,
   overdueCharges,
   rentalHistory,
+  renterIncidents,
   renterViolations,
   rentalPayments,
 } from "@/modules/rentals";
@@ -349,6 +350,7 @@ export default async function RentersPage({
     motos,
     histórico,
     infrações,
+    sinistros,
   ] = await Promise.all([
     listRenters(client, filters),
     // Sem filtro: os cards são da carteira inteira, e não podem mudar porque
@@ -368,6 +370,10 @@ export default async function RentersPage({
     // As infrações atribuídas a esta pessoa. Não são gravadas com o nome dela
     // — a view resolve pela data da multa e pelo período da locação.
     aberto ? renterViolations(client, aberto) : [],
+    // E os sinistros: a mesma pergunta, resolvida pela mesma função no banco.
+    // É o que o gestor olha antes de decidir sobre caução e sobre alugar de
+    // novo para essa pessoa.
+    aberto ? renterIncidents(client, aberto) : [],
   ]);
 
   // As cobranças em aberto dependem de qual é a locação, então vêm depois
@@ -626,6 +632,7 @@ export default async function RentersPage({
           payments={pagos}
           history={histórico}
           violations={infrações}
+          incidents={sinistros}
           vehicles={motos}
           closeHref={href(filters, { open: undefined })}
         />

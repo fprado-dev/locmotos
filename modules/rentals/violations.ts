@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { UserError } from "@/lib/user-error";
+import type { AttributionReading } from "./attribution";
 
 /**
  * A infração de trânsito, com a moto e com quem estava com ela.
@@ -26,12 +27,7 @@ export type TrafficViolation = {
   dueOn: string | null;
   createdAt: string;
   vehicle: { plate: string; brand: string; model: string };
-  /** Quantas locações continham o dia da infração. */
-  rentalMatches: number;
-  rentalId: string | null;
-  renterId: string | null;
-  renterName: string | null;
-};
+} & AttributionReading;
 
 /** O que o gestor lê na notificação e digita. */
 export type ViolationInput = {
@@ -42,33 +38,6 @@ export type ViolationInput = {
   amount?: number | null;
   dueOn?: string | null;
 };
-
-/**
- * De quem é a infração.
- *
- * Três respostas, e a terceira é o ponto: locação tem data com granularidade
- * de **dia**, então moto devolvida de manhã e alugada de novo à tarde deixa o
- * dia com dois donos possíveis. É raro, e é exatamente o caso em que nomear
- * alguém com cara de certeza é pior que dizer que não dá para saber.
- */
-export type ViolationBlame =
-  | { kind: "renter"; rentalId: string; renterId: string; name: string }
-  | { kind: "owner" }
-  | { kind: "ambiguous"; matches: number };
-
-export function violationBlame(violation: TrafficViolation): ViolationBlame {
-  const { rentalMatches, rentalId, renterId, renterName } = violation;
-
-  if (rentalMatches === 0) return { kind: "owner" };
-
-  // A view só nomeia quando não há empate; o `if` acima e este são a mesma
-  // decisão vista de dois lados, e o segundo é o que convence o TypeScript.
-  if (rentalMatches > 1 || !rentalId || !renterId || !renterName) {
-    return { kind: "ambiguous", matches: rentalMatches };
-  }
-
-  return { kind: "renter", rentalId, renterId, name: renterName };
-}
 
 type ViolationRow = {
   id: string;

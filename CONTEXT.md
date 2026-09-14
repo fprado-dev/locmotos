@@ -116,8 +116,8 @@ Conjunto de veículos de uma locadora.
 _Código_: `Fleet`
 
 **Baixa**:
-Tirar um veículo da frota ou um locatário da carteira sem apagar a linha. O cadastro some da lista e as locações e cobranças ligadas a ele continuam de pé — apagar levaria o histórico junto.
-_Código_: `deletedAt`, `removeVehicle`, `removeRenter`
+Tirar um veículo da frota ou um locatário da carteira sem apagar a linha. O cadastro some da lista e as locações e cobranças ligadas a ele continuam de pé — apagar levaria o histórico junto. A baixa de veículo tem **motivo** de lista fechada — vendida, perda total, roubada, outro — e aponta para o **sinistro** que a originou quando houve um: sem isso, daqui a um ano a moto que sumiu da lista não diz por quê. Motivo nulo é baixa anterior a este campo, e continua válida. **Moto em locação aberta não leva baixa**: a ordem é encerrar a locação primeiro, e a recusa diz isso. A ficha de uma moto baixada continua abrindo — é onde o motivo está escrito.
+_Código_: `deletedAt`, `discardReason`, `removeVehicle`, `removeRenter`
 _Evitar_: exclusão, delete, arquivar, inativar
 
 **Situação**:
@@ -153,8 +153,8 @@ _Código_: `Restriction`
 _Evitar_: blacklist, lista negra, bloqueio
 
 **Sinistro**:
-Evento que tira o veículo de operação por dano, roubo, furto ou perda total.
-_Código_: `Incident`
+Evento **externo** que tira o veículo de operação: batida, furto, roubo ou perda total. Furto e roubo são valores separados porque a locadora e a seguradora os tratam diferente. **Não é manutenção com outro nome** — manutenção é intervenção planejada ou conserto de desgaste; sinistro tem data, boletim de ocorrência e muitas vezes seguradora. A linha é do **veículo**, com data e **hora**: a hora decide a borda. **Quem estava com a moto não é um campo, é a mesma consulta da infração** — `public.rental_at`, em dia de Brasília —, com a mesma recusa a escolher quando duas locações contêm o dia. Registrar um sinistro **não mexe na situação da moto**: batida pode significar oficina, baixa ou nada, e quem decide é o gestor. A única exceção é perda total, que **oferece** a baixa no mesmo ato — oferece, porque o laudo da seguradora é que manda, e o sistema não sabe se ele saiu.
+_Código_: `Incident`, `recordIncident`, `whoHadIt`
 _Evitar_: ocorrência, acidente, evento
 
 **Infração**:

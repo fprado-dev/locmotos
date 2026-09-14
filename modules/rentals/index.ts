@@ -22,13 +22,27 @@ export {
   type Inspections,
 } from "./inspections";
 export {
+  whoHadIt,
+  type Attribution,
+  type AttributionReading,
+} from "./attribution";
+export {
+  deleteIncident,
+  findIncident,
+  INCIDENT_KINDS,
+  recordIncident,
+  renterIncidents,
+  vehicleIncidents,
+  type Incident,
+  type IncidentInput,
+  type IncidentKind,
+} from "./incidents";
+export {
   deleteViolation,
   recordViolation,
   renterViolations,
   vehicleViolations,
-  violationBlame,
   type TrafficViolation,
-  type ViolationBlame,
   type ViolationInput,
 } from "./violations";
 export {
