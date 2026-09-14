@@ -9,7 +9,12 @@ import {
 } from "react";
 import { Upload } from "lucide-react";
 import { AutofillButton } from "@/app/dev/autofill-button";
-import { STATUS_LABELS, VEHICLE_COLORS, vehicleColor } from "@/app/ui";
+import {
+  formatInteger,
+  STATUS_LABELS,
+  VEHICLE_COLORS,
+  vehicleColor,
+} from "@/app/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +42,8 @@ function Field({
   required = false,
   step,
   defaultValue,
+  placeholder,
+  min,
   className,
   fieldClassName,
   invalid,
@@ -47,6 +54,9 @@ function Field({
   required?: boolean;
   step?: string;
   defaultValue?: string;
+  /** O que vale sem o campo preenchido — não o que vai ser gravado. */
+  placeholder?: string;
+  min?: number;
   className?: string;
   fieldClassName?: string;
   /** O recado é um só, e mora no topo: aqui o campo só se marca como o acusado. */
@@ -65,6 +75,8 @@ function Field({
         step={step}
         required={required}
         defaultValue={defaultValue}
+        placeholder={placeholder}
+        min={min}
         aria-invalid={invalid ? true : undefined}
         aria-describedby={invalid ? FORM_ERROR_ID : undefined}
         className={className}
@@ -97,10 +109,19 @@ const initialState: FormState = {};
  */
 export function VehicleForm({
   vehicle,
+  revisionDefault,
   onCancel,
   onSaved,
 }: {
   vehicle?: Vehicle;
+  /**
+   * O intervalo de revisão da locadora, só para o placeholder.
+   *
+   * Placeholder e não `defaultValue`: em branco a moto **herda**, e o campo
+   * precisa mostrar o que vai valer sem gravar o número dentro dela — copiado,
+   * ele pararia de acompanhar a locadora no dia em que o padrão mudasse.
+   */
+  revisionDefault?: number;
   onCancel?: () => void;
   onSaved?: (created: { id: string; plate: string }) => void;
 }) {
@@ -236,6 +257,19 @@ export function VehicleForm({
             type="number"
             defaultValue={value(vehicle?.mileage)}
             invalid={acusado("mileage")}
+            className="text-right"
+          />
+          <Field
+            name="revisionIntervalKm"
+            label="Revisão a cada (km)"
+            type="number"
+            min={1}
+            step="1"
+            defaultValue={value(vehicle?.revisionIntervalKm)}
+            placeholder={
+              revisionDefault ? formatInteger(revisionDefault) : undefined
+            }
+            invalid={acusado("revisionIntervalKm")}
             className="text-right"
           />
 

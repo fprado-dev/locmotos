@@ -28,12 +28,18 @@ export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
  * `amount` é sempre **positivo**; quem diz a direção é `kind`. Guardar saída
  * como número negativo é convite a somar errado uma vez e não perceber.
  *
- * Entrada é pagamento, e não uma tabela de recebimentos: todo dinheiro que
- * entra na v1 entrou quitando uma cobrança, e espelhar `payments` numa segunda
- * tabela seria criar duas verdades que divergem no primeiro estorno.
+ * Nenhuma das três origens é tabela espelho. Entrada é o próprio pagamento —
+ * todo dinheiro que entra na v1 entrou quitando uma cobrança. Saída é despesa
+ * avulsa **ou** o custo de uma manutenção, lido de onde ele foi digitado:
+ * copiá-lo para `expenses` criaria o segundo número que a tela existe para
+ * evitar, e ele divergiria na primeira correção.
+ *
+ * `payment` é a única entrada; `expense` e `maintenance` são as duas saídas, e
+ * a distinção entre elas é só de porta — a linha de manutenção se corrige na
+ * ficha da moto, não aqui.
  */
 export type CashEntry = {
-  kind: "payment" | "expense";
+  kind: "payment" | "expense" | "maintenance";
   id: string;
   /** O dia em que o dinheiro se mexeu, que não é o dia em que foi digitado. */
   happenedOn: string;
@@ -76,7 +82,7 @@ export type ExpenseInput = {
 };
 
 type EntryRow = {
-  kind: "payment" | "expense";
+  kind: "payment" | "expense" | "maintenance";
   id: string;
   happened_on: string;
   amount: string | number;

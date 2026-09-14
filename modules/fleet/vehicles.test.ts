@@ -205,9 +205,9 @@ describe("situação do veículo", () => {
     const moto = await createVehicle(manager.client, {
       ...cg160,
       plate: "STA0A01",
-      status: "maintenance",
+      status: "unavailable",
     });
-    expect(moto.status).toBe("maintenance");
+    expect(moto.status).toBe("unavailable");
 
     // A página de detalhe não tem campo de situação: quem a muda lá é o select
     // do cabeçalho. Salvar o cadastro sem esse campo não pode desfazer isso.
@@ -217,7 +217,7 @@ describe("situação do veículo", () => {
       mileage: 999,
     });
 
-    expect(corrigida).toMatchObject({ status: "maintenance", mileage: 999 });
+    expect(corrigida).toMatchObject({ status: "unavailable", mileage: 999 });
   });
 
   it("nasce disponível, sem o gestor marcar nada", async () => {
@@ -232,10 +232,10 @@ describe("situação do veículo", () => {
     const manager = await createManager();
     const created = await createVehicle(manager.client, cg160);
 
-    await setVehicleStatus(manager.client, created.id, "maintenance");
+    await setVehicleStatus(manager.client, created.id, "unavailable");
 
     expect(await findVehicle(manager.client, created.id)).toMatchObject({
-      status: "maintenance",
+      status: "unavailable",
     });
   });
 
@@ -282,7 +282,7 @@ describe("busca e filtros", () => {
       model: "Biz 125",
       year: 2022,
     });
-    await setVehicleStatus(manager.client, factor.id, "maintenance");
+    await setVehicleStatus(manager.client, factor.id, "unavailable");
 
     return { ...manager, cg, factor, biz };
   }
@@ -304,7 +304,7 @@ describe("busca e filtros", () => {
 
   it("devolve só a situação pedida", async () => {
     const { vehicles } = await listVehicles(fleet.client, {
-      status: "maintenance",
+      status: "unavailable",
     });
 
     expect(vehicles.map((vehicle) => vehicle.id)).toEqual([fleet.factor.id]);
@@ -650,7 +650,7 @@ describe("operador do SaaS", () => {
 
     // E só. O acesso ampliado é de leitura: as policies de escrita continuam
     // exigindo a locadora do JWT, e o operador não tem nenhuma.
-    expect(await setVehicleStatus(operator, moto.id, "maintenance")).toBeNull();
+    expect(await setVehicleStatus(operator, moto.id, "unavailable")).toBeNull();
     expect(
       await updateVehicle(operator, moto.id, { ...cg160, brand: "Trocada" }),
     ).toBeNull();
@@ -786,7 +786,7 @@ describe("os números da frota", () => {
       // Fora da janela de aviso: não entra em nenhum dos dois contadores.
       licensingDueDate: "2027-08-01",
     });
-    const manutenção = await createVehicle(manager.client, {
+    const outraIndisponível = await createVehicle(manager.client, {
       ...cg160,
       plate: "SUM0A04",
       weeklyPrice: 500,
@@ -797,6 +797,8 @@ describe("os números da frota", () => {
     });
     // "Reservada" não se digita: quem reserva a moto é a locação, e o
     // contador tem que enxergar a situação derivada como enxerga as outras.
+    // "Em manutenção" é a outra derivada — vem da ordem de serviço, e por isso
+    // o contador fica em zero enquanto ninguém está na oficina.
     const locatária = await createRenter(manager.client, {
       name: "Ana Ribeiro",
       cpf: "52998224725",
@@ -806,7 +808,7 @@ describe("os números da frota", () => {
       vehicleId: reservada.id,
       weeklyPrice: 500,
     });
-    await setVehicleStatus(manager.client, manutenção.id, "maintenance");
+    await setVehicleStatus(manager.client, outraIndisponível.id, "unavailable");
     await setVehicleStatus(manager.client, indisponível.id, "unavailable");
 
     // Moto com baixa saiu da frota: não conta em lugar nenhum.
@@ -821,10 +823,15 @@ describe("os números da frota", () => {
       total: 5,
       available: 2,
       reserved: 1,
-      maintenance: 1,
-      unavailable: 1,
+      maintenance: 0,
+      unavailable: 2,
       licensingDueSoon: 1,
       licensingOverdue: 1,
+      // Nenhuma destas cinco tem quilometragem anotada: sem leitura, a régua
+      // da revisão não tem o que dizer — e moto recém-cadastrada nascendo com
+      // a revisão vencida é o jeito mais rápido de o gestor ignorar o selo.
+      revisionDueSoon: 0,
+      revisionOverdue: 0,
       availableWeeklyPrice: 320,
     });
   });
@@ -907,16 +914,16 @@ describe("os contadores dos chips de situação", () => {
       plate: "CHP0A03",
       brand: "Yamaha",
     });
-    await setVehicleStatus(manager.client, honda.id, "maintenance");
-    await setVehicleStatus(manager.client, yamaha.id, "maintenance");
+    await setVehicleStatus(manager.client, honda.id, "unavailable");
+    await setVehicleStatus(manager.client, yamaha.id, "unavailable");
 
     // Sem filtro: a frota inteira.
     expect(await fleetStatusCounts(manager.client)).toEqual({
       all: 3,
       available: 1,
       reserved: 0,
-      maintenance: 2,
-      unavailable: 0,
+      maintenance: 0,
+      unavailable: 2,
     });
 
     // Com a marca escolhida, o chip promete o que vai entregar.
@@ -925,22 +932,22 @@ describe("os contadores dos chips de situação", () => {
         all: 2,
         available: 1,
         reserved: 0,
-        maintenance: 1,
-        unavailable: 0,
+        maintenance: 0,
+        unavailable: 1,
       },
     );
 
-    // E a situação já escolhida é a única que o recorte ignora: com "Em
-    // manutenção" ativo, o chip "Disponível" continua sabendo dizer quantas
+    // E a situação já escolhida é a única que o recorte ignora: com
+    // "Indisponível" ativo, o chip "Disponível" continua sabendo dizer quantas
     // são, senão o gestor não teria como voltar atrás.
     expect(
-      await fleetStatusCounts(manager.client, { status: "maintenance" }),
+      await fleetStatusCounts(manager.client, { status: "unavailable" }),
     ).toEqual({
       all: 3,
       available: 1,
       reserved: 0,
-      maintenance: 2,
-      unavailable: 0,
+      maintenance: 0,
+      unavailable: 2,
     });
   });
 });
@@ -984,7 +991,7 @@ describe("ações em lote", () => {
 
     // Lote vazio não vira consulta: `in.()` sem nada dentro é sintaxe que o
     // PostgREST recusa, e "nada selecionado" não é erro do gestor.
-    expect(await setVehiclesStatus(manager.client, [], "maintenance")).toEqual(
+    expect(await setVehiclesStatus(manager.client, [], "unavailable")).toEqual(
       [],
     );
     expect(await removeVehicles(manager.client, [])).toEqual([]);

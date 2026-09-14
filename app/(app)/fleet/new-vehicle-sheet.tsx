@@ -26,7 +26,11 @@ import { VehicleForm } from "./vehicle-form";
  * em toast, que sobrevive ao painel que o causou; erro de validação fica
  * dentro, colado ao campo, porque lá ainda há o que corrigir.
  */
-export function NewVehicleSheet() {
+export function NewVehicleSheet({
+  revisionDefault,
+}: {
+  revisionDefault: number;
+}) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
 
@@ -43,6 +47,7 @@ export function NewVehicleSheet() {
         </SheetHeader>
 
         <VehicleForm
+          revisionDefault={revisionDefault}
           onCancel={() => setOpen(false)}
           onSaved={({ id, plate }) => {
             setOpen(false);

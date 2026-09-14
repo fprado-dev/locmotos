@@ -250,6 +250,10 @@ export function Statement({ entries }: { entries: CashEntry[] }) {
       <div className="overflow-hidden rounded-[10px] border border-border bg-card">
         {entries.map((entry) => {
           const entrada = entry.kind === "payment";
+          // A linha de manutenção não mora em `expenses`: ela é o custo da
+          // ordem de serviço, lido de lá. Corrigi-la aqui abriria a segunda
+          // porta para o mesmo número — então daqui só se vai até ela.
+          const daOficina = entry.kind === "maintenance";
 
           return (
             <div
@@ -304,19 +308,30 @@ export function Statement({ entries }: { entries: CashEntry[] }) {
                 {entrada ? "+" : "−"} R$ {formatMoney(entry.amount)}
               </span>
 
-              {/* Só a saída se apaga. Desfazer uma entrada é estornar o
-                  pagamento, e isso se faz onde ele foi lançado — registrando o
-                  desfazimento em vez de sumir com a linha. */}
+              {/* Só a despesa avulsa se apaga aqui. Desfazer uma entrada é
+                  estornar o pagamento, e isso se faz onde ele foi lançado —
+                  registrando o desfazimento em vez de sumir com a linha. */}
               <span className="w-[72px] shrink-0 text-right">
-                {!entrada && (
+                {daOficina ? (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="-my-1 text-xs text-muted-foreground"
-                    onClick={() => setApagando(entry)}
+                    render={<Link href={`/fleet/${entry.vehicleId}`} />}
                   >
-                    Apagar
+                    Na ficha
                   </Button>
+                ) : (
+                  !entrada && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="-my-1 text-xs text-muted-foreground"
+                      onClick={() => setApagando(entry)}
+                    >
+                      Apagar
+                    </Button>
+                  )
                 )}
               </span>
             </div>

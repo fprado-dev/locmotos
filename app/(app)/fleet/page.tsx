@@ -27,6 +27,9 @@ import {
   fleetStatusCounts,
   fleetSummary,
   licensingAlert,
+  kmUntilRevision,
+  revisionAlert,
+  revisionDefault,
   listVehicles,
   LONG_STOP_DAYS,
   VEHICLE_SORTS,
@@ -44,6 +47,7 @@ import { RowCheckbox, SelectAll, Selection, Toolbar } from "../selection";
 import { BatchBar } from "./batch-bar";
 import { FilterSelect } from "./filter-select";
 import { NewVehicleSheet } from "./new-vehicle-sheet";
+import { RevisionDefault } from "./revision-default";
 
 type Param = string | string[] | undefined;
 
@@ -216,6 +220,35 @@ function LicensingBadge({ dueDate }: { dueDate: string | null }) {
   );
 }
 
+/**
+ * O que a lista precisa gritar sobre a revisão.
+ *
+ * Mora na célula de Km porque é a mesma pergunta: quantos quilômetros esta
+ * moto tem, e quantos faltam para ela precisar de oficina. Aparece só quando
+ * há o que dizer — um selo em toda linha vira papel de parede.
+ */
+function RevisionBadge({ vehicle }: { vehicle: Vehicle }) {
+  const alert = revisionAlert(vehicle);
+  if (!alert) return null;
+
+  const km = kmUntilRevision(vehicle);
+
+  return (
+    <Badge
+      className={cn(
+        "h-auto rounded-md px-[7px] py-0.5 text-[11px]",
+        alert === "overdue"
+          ? "bg-late font-semibold text-white"
+          : "bg-soon-bg font-medium text-soon-fg",
+      )}
+    >
+      {alert === "overdue"
+        ? `Revisão ${formatInteger(-km)} km atrás`
+        : `Revisão em ${formatInteger(km)} km`}
+    </Badge>
+  );
+}
+
 /** Uma moto por linha, do jeito que se compara com a de cima e a de baixo. */
 function VehicleRow({
   vehicle,
@@ -281,11 +314,14 @@ function VehicleRow({
       </TableCell>
 
       <TableCell className={cn(CELL, "text-right")}>
-        {vehicle.mileage === null ? (
-          <span className="text-subtle">—</span>
-        ) : (
-          formatInteger(vehicle.mileage)
-        )}
+        <span className="flex flex-col items-end gap-0.5">
+          {vehicle.mileage === null ? (
+            <span className="text-subtle">—</span>
+          ) : (
+            formatInteger(vehicle.mileage)
+          )}
+          <RevisionBadge vehicle={vehicle} />
+        </span>
       </TableCell>
 
       <TableCell className={cn(CELL, "text-right")}>
@@ -357,12 +393,13 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
   );
 
   const client = await createClient();
-  const [{ vehicles, hasMore, total }, summary, options, counts] =
+  const [{ vehicles, hasMore, total }, summary, options, counts, intervalo] =
     await Promise.all([
       listVehicles(client, filters),
       fleetSummary(client),
       fleetFilterOptions(client),
       fleetStatusCounts(client, filters),
+      revisionDefault(client),
     ]);
 
   // Os filtros como já estão na URL: é o que os selects reescrevem ao mudar.
@@ -398,11 +435,11 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
           </span>
         </h1>
 
-        <NewVehicleSheet />
+        <NewVehicleSheet revisionDefault={intervalo} />
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col px-8 pb-6">
-        <section className="mt-1 mb-4 grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4">
+        <section className="mt-1 mb-4 grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-5">
           <SummaryCard
             label="Total de motos"
             value={formatInteger(summary.total)}
@@ -427,6 +464,12 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
                 {`${summary.licensingOverdue} vencido${summary.licensingOverdue === 1 ? "" : "s"}`}
               </>
             }
+          />
+          <SummaryCard
+            label="Revisão vencida"
+            dot="var(--late)"
+            value={formatInteger(summary.revisionOverdue)}
+            note={<RevisionDefault km={intervalo} />}
           />
           <SummaryCard
             label="Receita semanal potencial"

@@ -22,13 +22,20 @@ export type VehicleStatus = (typeof VEHICLE_STATUSES)[number];
 /**
  * As situações que o gestor pode escolher à mão.
  *
- * `reserved` fica de fora porque quem a define é a locação, não o select: a
- * moto entra em reservada ao abrir uma locação e sai ao encerrá-la. Os selects
- * da tela oferecem esta lista e dizem por que a quarta não está lá.
+ * Duas ficam de fora, e pelo mesmo motivo: quem as define é um fato, não o
+ * select. `reserved` é consequência de locação ativa; `maintenance` é
+ * consequência de manutenção em aberto — a moto entra na oficina quando a
+ * ordem de serviço abre e volta quando ela fecha. Os selects da tela oferecem
+ * esta lista e dizem por que as outras duas não estão lá.
  */
+export const DERIVED_VEHICLE_STATUSES = ["reserved", "maintenance"] as const;
+
+export type DerivedVehicleStatus = (typeof DERIVED_VEHICLE_STATUSES)[number];
+
 export const MANAGER_VEHICLE_STATUSES = VEHICLE_STATUSES.filter(
-  (status) => status !== "reserved",
-) as readonly Exclude<VehicleStatus, "reserved">[];
+  (status) =>
+    !DERIVED_VEHICLE_STATUSES.includes(status as DerivedVehicleStatus),
+) as readonly Exclude<VehicleStatus, DerivedVehicleStatus>[];
 
 /** Os três anexos que um veículo tem: a foto e os dois documentos. */
 export const VEHICLE_FILE_KINDS = ["photo", "crlv", "crv"] as const;
@@ -99,6 +106,31 @@ export type Vehicle = {
    * a pergunta é de folhinha.
    */
   idleSince: string;
+  /**
+   * De quantos em quantos quilômetros esta moto vai à revisão.
+   *
+   * `null` é o caso normal: a moto herda o intervalo da locadora. O número só
+   * aparece aqui quando alguém digitou a exceção — a moto que roda em
+   * aplicativo o dia inteiro e vai à oficina antes das outras.
+   */
+  revisionIntervalKm: number | null;
+  /**
+   * A quilometragem de hoje: a maior leitura que alguém anotou.
+   *
+   * Cadastro, vistoria de devolução ou entrada na oficina — a maior, e não a
+   * mais recente: odômetro não anda para trás, e a leitura mais alta continua
+   * certa mesmo quando alguém digitou a data errada.
+   */
+  currentKm: number;
+  /**
+   * Em que quilômetro cai a próxima revisão.
+   *
+   * Derivado, nunca coluna: é o odômetro da última preventiva mais o
+   * intervalo, e guardá-lo criaria um número que envelhece sozinho e que
+   * ninguém recalcula quando o intervalo muda. Sem preventiva registrada, a
+   * conta parte da quilometragem de cadastro.
+   */
+  nextRevisionKm: number;
 };
 
 /**
@@ -124,6 +156,7 @@ export type NewVehicle = Pick<Vehicle, "plate" | "brand" | "model" | "year"> &
       | "purchaseValue"
       | "purchaseDate"
       | "notes"
+      | "revisionIntervalKm"
     >
   >;
 
@@ -151,8 +184,11 @@ type VehicleRow = {
   crlv_path: string | null;
   crv_path: string | null;
   created_at: string;
+  revision_interval_km: number | null;
   /** Só a view tem: a escrita devolve a linha da tabela. */
   idle_since?: string | null;
+  current_km?: number | null;
+  next_revision_km?: number | null;
   tenants: { name: string } | null;
 };
 
@@ -193,25 +229,45 @@ function toVehicle(row: VehicleRow): Vehicle {
     // fallback certo: uma moto que acabou de ser criada ou corrigida na tela
     // vai ser relida pela view no próximo carregamento.
     idleSince: row.idle_since ?? row.created_at.slice(0, 10),
+    revisionIntervalKm: row.revision_interval_km,
+    // Mesmo motivo do `idleSince`: a escrita devolve a linha da tabela, que
+    // não tem as derivadas. A moto recém-salva é relida pela view no próximo
+    // carregamento, e até lá o selo de revisão não aparece — o que é melhor
+    // que aparecer errado.
+    currentKm: row.current_km ?? row.mileage ?? 0,
+    nextRevisionKm: row.next_revision_km ?? 0,
   };
 }
 
 /**
- * Por que "Reservada" não se escolhe.
+ * Por que duas das quatro situações não se escolhem.
  *
- * Uma frase só, para a recusa ser a mesma no cadastro, na correção e no lote —
- * é a mesma regra, e três redações dela acabariam divergindo.
+ * Uma frase por situação, num lugar só, para a recusa ser a mesma no cadastro,
+ * na correção e no lote — é a mesma regra, e três redações dela acabariam
+ * divergindo.
  */
-const RESERVED_IS_DERIVED =
-  "Reservada é consequência de locação ativa: abra uma locação para a moto ficar reservada.";
+const DERIVED_STATUS_REASON: Record<DerivedVehicleStatus, string> = {
+  reserved:
+    "Reservada é consequência de locação ativa: abra uma locação para a moto ficar reservada.",
+  maintenance:
+    "Em manutenção é consequência de ordem de serviço aberta: registre a manutenção na ficha da moto.",
+};
+
+/** A situação veio do browser: só duas das quatro são escolha de alguém. */
+function refuseDerived(status: VehicleStatus | undefined) {
+  if (DERIVED_VEHICLE_STATUSES.includes(status as DerivedVehicleStatus)) {
+    throw new UserError(
+      DERIVED_STATUS_REASON[status as DerivedVehicleStatus],
+      "status",
+    );
+  }
+}
 
 function toRow(vehicle: NewVehicle) {
-  // A situação derivada não entra por escrita nenhuma. Sem esta guarda, um
-  // POST fabricado gravaria `reserved` na coluna de uma moto sem locação, e a
-  // frota passaria a mostrar reservada uma moto que ninguém alugou.
-  if (vehicle.status === "reserved") {
-    throw new UserError(RESERVED_IS_DERIVED, "status");
-  }
+  // Situação derivada não entra por escrita nenhuma. Sem esta guarda, um POST
+  // fabricado gravaria `reserved` na coluna de uma moto sem locação, e a frota
+  // passaria a mostrar reservada uma moto que ninguém alugou.
+  refuseDerived(vehicle.status);
 
   return {
     // A placa é a mesma escrita em qualquer caixa. Normalizar aqui mantém a
@@ -231,6 +287,7 @@ function toRow(vehicle: NewVehicle) {
     purchase_value: vehicle.purchaseValue,
     purchase_date: vehicle.purchaseDate,
     notes: vehicle.notes,
+    revision_interval_km: vehicle.revisionIntervalKm,
     // Situação só entra quando a tela ofereceu o campo. Sem essa guarda,
     // salvar o cadastro na página de detalhe apagaria a situação que o select
     // da linha acabou de gravar — o formulário de lá não tem esse campo.
@@ -280,6 +337,48 @@ export async function createVehicle(
 
   if (error) throw toDomainError(error, row.plate);
   return toVehicle(data as VehicleRow);
+}
+
+/**
+ * De quantos em quantos quilômetros a frota desta locadora vai à revisão.
+ *
+ * É o padrão, não a regra: a moto que foge dele digita a exceção na própria
+ * ficha. Mora em `tenants` e não numa tabela de configurações porque é um
+ * número só — uma tabela chave-valor para uma linha é cerimônia.
+ */
+export async function revisionDefault(client: SupabaseClient): Promise<number> {
+  const { data, error } = await client
+    .from("tenants")
+    .select("revision_interval_km")
+    .single();
+
+  if (error) throw error;
+  return (data as { revision_interval_km: number }).revision_interval_km;
+}
+
+/** Troca o intervalo padrão da locadora. Vale para quem herda, na hora. */
+export async function setRevisionDefault(
+  client: SupabaseClient,
+  km: number,
+): Promise<number> {
+  if (!Number.isInteger(km) || km <= 0) {
+    throw new UserError(
+      "O intervalo de revisão precisa ser um número de quilômetros maior que zero.",
+      "revisionIntervalKm",
+    );
+  }
+
+  const { data, error } = await client
+    .from("tenants")
+    .update({ revision_interval_km: km })
+    // A policy já limita à locadora do JWT; o `neq` impossível é só o filtro
+    // que o PostgREST exige para não recusar um update sem `where`.
+    .neq("id", "00000000-0000-0000-0000-000000000000")
+    .select("revision_interval_km")
+    .single();
+
+  if (error) throw error;
+  return (data as { revision_interval_km: number }).revision_interval_km;
 }
 
 /** Quantos veículos cabem numa página da lista. */
@@ -498,6 +597,9 @@ export type FleetSummary = {
   /** Licenciamento vencendo dentro de `LICENSING_WARNING_DAYS`. */
   licensingDueSoon: number;
   licensingOverdue: number;
+  /** Revisão faltando menos de `REVISION_WARNING_KM`. */
+  revisionDueSoon: number;
+  revisionOverdue: number;
   /** Soma do valor semanal das disponíveis: o que a frota rende se alugar tudo. */
   availableWeeklyPrice: number;
 };
@@ -508,14 +610,20 @@ export async function fleetSummary(
 ): Promise<FleetSummary> {
   const { data, error } = await client
     .from(READ)
-    .select("status, licensing_due_date, weekly_price")
+    .select(
+      "status, licensing_due_date, weekly_price, current_km, next_revision_km",
+    )
     .is("deleted_at", null);
 
   if (error) throw error;
 
   const rows = data as Pick<
     VehicleRow,
-    "status" | "licensing_due_date" | "weekly_price"
+    | "status"
+    | "licensing_due_date"
+    | "weekly_price"
+    | "current_km"
+    | "next_revision_km"
   >[];
 
   const summary: FleetSummary = {
@@ -526,6 +634,8 @@ export async function fleetSummary(
     unavailable: 0,
     licensingDueSoon: 0,
     licensingOverdue: 0,
+    revisionDueSoon: 0,
+    revisionOverdue: 0,
     availableWeeklyPrice: 0,
   };
 
@@ -539,6 +649,13 @@ export async function fleetSummary(
     const alert = licensingAlert(row.licensing_due_date, today);
     if (alert === "overdue") summary.licensingOverdue += 1;
     if (alert === "due-soon") summary.licensingDueSoon += 1;
+
+    const revisão = revisionAlert({
+      currentKm: row.current_km ?? 0,
+      nextRevisionKm: row.next_revision_km ?? 0,
+    });
+    if (revisão === "overdue") summary.revisionOverdue += 1;
+    if (revisão === "due-soon") summary.revisionDueSoon += 1;
   }
 
   return summary;
@@ -744,11 +861,11 @@ export async function findVehicle(
  * Um update só para o lote inteiro, e não um por id: o lote é uma decisão do
  * gestor, e meia dúzia de updates soltos poderia deixar metade aplicada.
  *
- * Duas situações não se alteram daqui, e as duas pelo mesmo motivo — quem as
- * decide é a locação, não o select: `reserved` não é um valor a escolher, e
- * moto que já está reservada só volta a mudar de situação quando a locação
- * dela for encerrada. Ela fica de fora do lote em vez de derrubá-lo inteiro, e
- * quem chamou conta ao gestor o que de fato mudou.
+ * Quem está numa situação derivada não se altera daqui, e por um motivo só:
+ * quem a decide é um fato, não o select. Moto reservada volta a mudar de
+ * situação quando a locação for encerrada; moto em manutenção, quando a ordem
+ * de serviço fechar. As duas ficam de fora do lote em vez de derrubá-lo
+ * inteiro, e quem chamou conta ao gestor o que de fato mudou.
  */
 export async function setVehiclesStatus(
   client: SupabaseClient,
@@ -757,9 +874,9 @@ export async function setVehiclesStatus(
 ): Promise<Vehicle[]> {
   if (ids.length === 0) return [];
 
-  if (status === "reserved") throw new UserError(RESERVED_IS_DERIVED, "status");
+  refuseDerived(status);
 
-  // A situação derivada vem da view; a alugada é a que sai do lote.
+  // A situação derivada vem da view; é ela que diz quem sai do lote.
   const { data: atuais, error: readError } = await client
     .from(READ)
     .select("id, status")
@@ -769,7 +886,10 @@ export async function setVehiclesStatus(
   if (readError) throw readError;
 
   const livres = (atuais as Pick<VehicleRow, "id" | "status">[])
-    .filter((row) => row.status !== "reserved")
+    .filter(
+      (row) =>
+        !DERIVED_VEHICLE_STATUSES.includes(row.status as DerivedVehicleStatus),
+    )
     .map((row) => row.id);
 
   if (livres.length === 0) return [];
@@ -998,6 +1118,53 @@ export function daysWithoutRental(since: string, today = new Date()): number {
  * de regra, não de arte: mexer nele muda o que a tela grita.
  */
 export const LONG_STOP_DAYS = 30;
+
+/**
+ * A folga antes de a revisão estourar.
+ *
+ * Quinhentos quilômetros é uma semana de moto de aplicativo: dá tempo de
+ * marcar a oficina sem tirar a moto da rua às pressas. O número é de regra,
+ * não de arte — mexer nele muda quando a tela começa a incomodar.
+ */
+export const REVISION_WARNING_KM = 500;
+
+/** Vencida, vencendo, ou nada a dizer — a mesma régua do licenciamento. */
+export type RevisionAlert = "overdue" | "due-soon";
+
+/**
+ * As duas leituras que a régua da revisão precisa, e nada além.
+ *
+ * O resumo da frota lê só duas colunas por linha; pedir o `Vehicle` inteiro
+ * obrigaria a carregar a frota completa para contar quantas estão vencidas.
+ */
+type RevisionReading = Pick<Vehicle, "currentKm" | "nextRevisionKm">;
+
+/**
+ * Quantos quilômetros faltam para a revisão. Negativo já passou.
+ *
+ * Nada é guardado: a conta é a diferença entre duas leituras que a view já
+ * resolveu. Uma coluna "faltam X km" estaria errada no minuto seguinte à
+ * primeira vistoria.
+ */
+export function kmUntilRevision(vehicle: RevisionReading): number {
+  return vehicle.nextRevisionKm - vehicle.currentKm;
+}
+
+/**
+ * O que a lista precisa gritar sobre a revisão desta moto.
+ *
+ * Moto sem quilometragem nenhuma não tem o que dizer: a conta partiria de
+ * zero e toda moto recém-cadastrada nasceria com a revisão vencida, que é o
+ * jeito mais rápido de o gestor aprender a ignorar o selo.
+ */
+export function revisionAlert(vehicle: RevisionReading): RevisionAlert | null {
+  if (!vehicle.currentKm) return null;
+
+  const km = kmUntilRevision(vehicle);
+  if (km < 0) return "overdue";
+
+  return km <= REVISION_WARNING_KM ? "due-soon" : null;
+}
 
 /** Vencido, vencendo, ou nada a dizer. */
 export type LicensingAlert = "overdue" | "due-soon";

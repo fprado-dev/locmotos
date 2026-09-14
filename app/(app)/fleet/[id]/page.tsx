@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
+import { brasiliaDay } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/server";
-import { findVehicle, signedFileUrl } from "@/modules/fleet";
+import { findVehicle, revisionDefault, signedFileUrl } from "@/modules/fleet";
+import { vehicleMaintenances } from "@/modules/maintenance";
 import { vehicleViolations } from "@/modules/rentals";
 import { VehicleViolations } from "../../violations-block";
 import { StatusSelect } from "../status-select";
 import { VehicleForm } from "../vehicle-form";
 import { DiscardButton } from "./discard-button";
 import { VehicleFiles } from "./vehicle-files";
+import { VehicleMaintenances } from "./maintenances-block";
 
 /**
  * Quanto vale uma URL assinada desta tela.
@@ -43,7 +46,11 @@ export default async function VehiclePage({
   // antes, e a tela não distingue os dois casos de propósito.
   if (!vehicle) notFound();
 
-  const violations = await vehicleViolations(client, vehicle.id);
+  const [violations, maintenances, intervalo] = await Promise.all([
+    vehicleViolations(client, vehicle.id),
+    vehicleMaintenances(client, vehicle.id),
+    revisionDefault(client),
+  ]);
 
   const paths = {
     photo: vehicle.photoPath,
@@ -94,15 +101,29 @@ export default async function VehiclePage({
       </header>
 
       <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
-        <VehicleForm vehicle={vehicle} />
+        <VehicleForm vehicle={vehicle} revisionDefault={intervalo} />
 
         <div className="border-t border-border pt-6">
           <VehicleFiles id={vehicle.id} links={links} />
         </div>
 
-        {/* As infrações vêm depois dos documentos e antes da baixa: é a ordem
-            em que a ficha se lê — o que a moto é, o que ela tem de papel, o
-            que aconteceu com ela. */}
+        {/* Manutenções antes de infrações: é a ordem em que a ficha se lê —
+            o que a moto é, o que ela tem de papel, o que já foi feito nela, e
+            o que aconteceu com ela na rua. E é daqui que a moto sai e volta
+            da oficina, então o bloco é ação, não só histórico. */}
+        <div className="border-t border-border pt-6">
+          <VehicleMaintenances
+            vehicleId={vehicle.id}
+            plate={vehicle.plate}
+            maintenances={maintenances}
+            today={brasiliaDay()}
+            revision={{
+              currentKm: vehicle.currentKm,
+              nextRevisionKm: vehicle.nextRevisionKm,
+            }}
+          />
+        </div>
+
         <div className="border-t border-border pt-6">
           <VehicleViolations
             vehicleId={vehicle.id}
