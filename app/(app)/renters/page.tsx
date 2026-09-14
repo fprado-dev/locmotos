@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   formatInteger,
+  formatMoney,
   formatMonthYear,
   initials,
   managerLabel,
@@ -437,7 +438,7 @@ export default async function RentersPage({
             label="Inadimplentes"
             dot="var(--destructive)"
             value={formatInteger(cards.delinquent)}
-            note={`R$ ${formatInteger(cards.overdueAmount)} em aberto`}
+            note={`R$ ${formatMoney(cards.overdueAmount)} em aberto`}
           />
           <SummaryCard
             label="Com restrição"

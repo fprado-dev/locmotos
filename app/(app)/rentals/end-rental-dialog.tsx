@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
-import { formatDay, formatInteger } from "@/app/ui";
+import { formatDay, formatMoney } from "@/app/ui";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -192,7 +192,7 @@ export function EndRentalDialog({
 
               {atraso && (
                 <p className="rounded-lg border border-input bg-late-bg px-4 py-3 text-[13px] text-late">
-                  R$ {formatInteger(atraso.amount)} em cobranças vencidas
+                  R$ {formatMoney(atraso.amount)} em cobranças vencidas
                   continuam devidos depois do encerramento. Encerrar não apaga o
                   que está em aberto.
                 </p>
@@ -235,7 +235,7 @@ export function EndRentalDialog({
                 <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
                   <Line
                     label="Caução retida"
-                    value={`R$ ${formatInteger(caução)}`}
+                    value={`R$ ${formatMoney(caução)}`}
                   />
                   <div className="@container">
                     <div className="grid gap-4 @sm:grid-cols-[180px_minmax(0,1fr)]">
@@ -266,7 +266,7 @@ export function EndRentalDialog({
                   <Line
                     strong
                     label="A devolver"
-                    value={`R$ ${formatInteger(caução - descontado)}`}
+                    value={`R$ ${formatMoney(caução - descontado)}`}
                   />
                 </div>
               )}

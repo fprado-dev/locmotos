@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { formatDay, formatInteger } from "@/app/ui";
+import { formatDay, formatMoney } from "@/app/ui";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -78,8 +78,8 @@ function PaymentDialog({
               <DialogTitle>Registrar pagamento</DialogTitle>
               <DialogDescription>
                 Semana de {cycle(charge.cycleStart, charge.cycleEnd)}, vencida
-                em {formatDay(charge.dueOn)} — R$ {formatInteger(charge.amount)}
-                . Uma cobrança é paga por inteiro.
+                em {formatDay(charge.dueOn)} — R$ {formatMoney(charge.amount)}.
+                Uma cobrança é paga por inteiro.
               </DialogDescription>
             </DialogHeader>
 
@@ -171,7 +171,7 @@ export function OverdueCharges({
                 {atraso?.days} d
               </span>
               <span className="ml-auto shrink-0 tabular-nums">
-                R$ {formatInteger(charge.amount)}
+                R$ {formatMoney(charge.amount)}
               </span>
               <Button
                 variant="outline"
@@ -188,7 +188,7 @@ export function OverdueCharges({
         <div className="flex items-center gap-3 bg-surface-2 px-4 py-2.5 text-[13px]">
           <span className="text-muted-foreground">Total em aberto</span>
           <span className="ml-auto font-medium tabular-nums">
-            R$ {formatInteger(total)}
+            R$ {formatMoney(total)}
           </span>
         </div>
       </div>
@@ -232,7 +232,7 @@ export function RegisteredPayments({ payments }: { payments: Payment[] }) {
             </span>
 
             <span className="ml-auto shrink-0 tabular-nums">
-              R$ {formatInteger(payment.cycle.amount)}
+              R$ {formatMoney(payment.cycle.amount)}
             </span>
 
             <Button

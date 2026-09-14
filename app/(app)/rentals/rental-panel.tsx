@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatDay, formatFullDate, formatInteger, initials } from "@/app/ui";
+import { formatDay, formatFullDate, formatMoney, initials } from "@/app/ui";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Sheet,
@@ -156,7 +156,7 @@ export function RentalPanel({
             <div className="grid grid-cols-2 gap-x-3 gap-y-4">
               <Datum label="Valor semanal">
                 <span className="tabular-nums">
-                  R$ {formatInteger(rental.weeklyPrice)}
+                  R$ {formatMoney(rental.weeklyPrice)}
                 </span>
               </Datum>
               <Datum label="Início">{formatDay(rental.startedOn)}</Datum>
@@ -172,7 +172,7 @@ export function RentalPanel({
                   <span className="text-subtle">—</span>
                 ) : (
                   <span className="tabular-nums">
-                    R$ {formatInteger(rental.deposit)}
+                    R$ {formatMoney(rental.deposit)}
                   </span>
                 )}
               </Datum>
@@ -196,14 +196,14 @@ export function RentalPanel({
                 {rental.earlyTerminationFee !== null && (
                   <Datum label="Cobrado na rescisão">
                     <span className="tabular-nums">
-                      R$ {formatInteger(rental.earlyTerminationFee)}
+                      R$ {formatMoney(rental.earlyTerminationFee)}
                     </span>
                   </Datum>
                 )}
                 {rental.depositReturned !== null && (
                   <Datum label="Caução devolvida">
                     <span className="tabular-nums">
-                      R$ {formatInteger(rental.depositReturned)}
+                      R$ {formatMoney(rental.depositReturned)}
                     </span>
                   </Datum>
                 )}
@@ -211,7 +211,7 @@ export function RentalPanel({
                   rental.depositDiscount > 0 && (
                     <Datum label="Desconto na caução">
                       <span className="tabular-nums">
-                        R$ {formatInteger(rental.depositDiscount)}
+                        R$ {formatMoney(rental.depositDiscount)}
                       </span>
                       {/* O motivo fica junto do número: um desconto sem
                           explicação é dinheiro sumindo da caução. */}

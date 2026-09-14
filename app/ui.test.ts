@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatDay, formatInteger, formatMonthYear, initials } from "./ui";
+import {
+  formatDay,
+  formatInteger,
+  formatMoney,
+  formatMonthYear,
+  initials,
+} from "./ui";
 
 describe("datas na tela", () => {
   it("mostra o dia que está no banco, sem o fuso mexer nele", () => {
@@ -28,5 +34,22 @@ describe("iniciais", () => {
 describe("números", () => {
   it("escreve inteiro em pt-BR", () => {
     expect(formatInteger(30_000)).toBe("30.000");
+  });
+
+  it("dinheiro não perde centavo", () => {
+    // O rateio da última semana criou centavos que o negócio não tinha:
+    // arredondar aqui faria a tela discordar do banco.
+    expect(formatMoney(128.57)).toBe("128,57");
+    expect(formatMoney(1_128.57)).toBe("1.128,57");
+  });
+
+  it("dinheiro não inventa centavo: ou zero casas ou duas, nunca uma", () => {
+    expect(formatMoney(300)).toBe("300");
+    expect(formatMoney(128.5)).toBe("128,50");
+  });
+
+  it("a sobra de ponto flutuante de uma soma não vira casa a mais", () => {
+    expect(formatMoney(0.1 + 0.2)).toBe("0,30");
+    expect(formatMoney(128.57 + 257.14)).toBe("385,71");
   });
 });

@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { formatInteger, STATUS_LABELS, vehicleColor } from "@/app/ui";
+import {
+  formatInteger,
+  formatMoney,
+  STATUS_LABELS,
+  vehicleColor,
+} from "@/app/ui";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -287,7 +292,7 @@ function VehicleRow({
         {vehicle.weeklyPrice === null ? (
           <span className="text-subtle">—</span>
         ) : (
-          formatInteger(vehicle.weeklyPrice)
+          formatMoney(vehicle.weeklyPrice)
         )}
       </TableCell>
 
@@ -426,7 +431,7 @@ export default async function FleetPage({ searchParams }: PageProps<"/fleet">) {
           <SummaryCard
             label="Receita semanal potencial"
             prefix="R$"
-            value={formatInteger(summary.availableWeeklyPrice)}
+            value={formatMoney(summary.availableWeeklyPrice)}
             note="Só motos disponíveis"
           />
         </section>
