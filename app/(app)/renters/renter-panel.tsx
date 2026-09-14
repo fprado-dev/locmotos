@@ -109,7 +109,9 @@ export function RenterPanel({
       }}
     >
       <SheetContent className="w-[520px] gap-0 sm:max-w-[520px]">
-        <SheetHeader className="h-16 shrink-0 flex-row items-center gap-3 border-b border-border px-6">
+        {/* `pr-14` reserva o canto do X: um nome comprido corria por baixo do
+            botão de fechar. */}
+        <SheetHeader className="h-16 shrink-0 flex-row items-center gap-3 border-b border-border px-6 pr-14">
           <span
             aria-hidden
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-chip text-xs font-semibold text-muted-foreground"

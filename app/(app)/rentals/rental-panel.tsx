@@ -94,17 +94,30 @@ export function RentalPanel({
         if (!aberto) router.push(closeHref);
       }}
     >
-      <SheetContent className="w-[520px] gap-0 sm:max-w-[520px]">
-        <SheetHeader className="h-16 shrink-0 flex-row items-center gap-3 border-b border-border px-6">
-          <span className="flex min-w-0 flex-col">
-            <SheetTitle className="truncate font-mono text-base tracking-[0.02em]">
-              {rental.vehicle.plate}
+      {/* A 520px este painel passava de mil pixels de altura e virava rolagem.
+          A altura cai pela largura: com espaço, cada seção deita numa linha só
+          em vez de empilhar dois a dois.
+
+          Largura e teto em duas classes, e não um `min(1040px,94vw)`: uma
+          classe arbitrária com vírgula dentro não chega a ser gerada pelo
+          Tailwind, e some sem erro nenhum. */}
+      <SheetContent className="w-[1040px] max-w-[94vw] gap-0 sm:max-w-[94vw]">
+        {/* `pr-14` reserva o canto do X: sem isso o botão de fechar sentava em
+            cima do badge de situação. */}
+        <SheetHeader className="h-16 shrink-0 flex-row items-center gap-3 border-b border-border px-6 pr-14">
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <SheetTitle className="flex min-w-0 items-baseline gap-2.5 text-base font-medium">
+              <span className="shrink-0 font-mono tracking-[0.02em]">
+                {rental.vehicle.plate}
+              </span>
+              <span className="truncate text-[13px] font-normal text-muted-foreground">
+                {rental.vehicle.brand} {rental.vehicle.model}
+              </span>
             </SheetTitle>
             <SheetDescription className="text-xs">
-              {rental.vehicle.brand} {rental.vehicle.model} ·{" "}
               {encerrada
-                ? `encerrada em ${formatDay(rental.endedOn!)}`
-                : `aberta em ${formatFullDate(rental.createdAt)}`}
+                ? `Devolvida em ${formatDay(rental.endedOn!)}`
+                : `Aberta em ${formatFullDate(rental.createdAt)}`}
             </SheetDescription>
           </span>
 
@@ -129,7 +142,7 @@ export function RentalPanel({
           </span>
         </SheetHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-6 pt-5 pb-6">
+        <div className="@container flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-6 pt-5 pb-6">
           <Section title="Locatário">
             <div className="flex items-center gap-2.5 rounded-lg border border-border px-4 py-3">
               <span
@@ -153,7 +166,10 @@ export function RentalPanel({
           </Section>
 
           <Section title="O acordo">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+            {/* Quantas colunas couberem de 150px: com a gaveta larga, os quatro
+                  dados do acordo deitam numa linha só em vez de empilhar dois a
+                  dois, e é daí que vem metade da altura que sobrava. */}
+            <div className="grid gap-x-5 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
               <Datum label="Valor semanal">
                 <span className="tabular-nums">
                   R$ {formatMoney(rental.weeklyPrice)}
@@ -181,7 +197,7 @@ export function RentalPanel({
 
           {encerrada && (
             <Section title="O encerramento">
-              <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+              <div className="grid gap-x-5 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
                 <Datum label="Devolvida em">{formatDay(rental.endedOn!)}</Datum>
                 <Datum label="Duração">
                   {rentalWeeks(rental)}{" "}
@@ -223,7 +239,6 @@ export function RentalPanel({
               </div>
             </Section>
           )}
-
           <InspectionsBlock rentalId={rental.id} inspections={inspections} />
 
           <OverdueCharges charges={charges} />

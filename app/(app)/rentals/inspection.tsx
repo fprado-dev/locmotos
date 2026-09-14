@@ -179,9 +179,14 @@ export function InspectionsBlock({
         <HandoverDialog rentalId={rentalId} inspection={inspections.handover} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <Side title="Entrega" inspection={inspections.handover} />
-        <Side title="Devolução" inspection={inspections.return} />
+      {/* Lado a lado enquanto couber: a leitura da devolução é uma subtração
+          da entrega, e uma embaixo da outra a comparação se perde. Abaixo de
+          uma coluna estreita elas empilham em vez de espremer. */}
+      <div className="@container">
+        <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2">
+          <Side title="Entrega" inspection={inspections.handover} />
+          <Side title="Devolução" inspection={inspections.return} />
+        </div>
       </div>
 
       {rodados !== null && (
