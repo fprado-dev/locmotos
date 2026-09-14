@@ -43,7 +43,8 @@ _Código_: `Rental`
 _Evitar_: aluguel, contrato, reserva
 
 **Contrato**:
-Documento assinado que dá evidência jurídica a uma locação. Uma locação tem no máximo um contrato assinado.
+Documento assinado que dá evidência jurídica a uma locação. Uma locação tem no máximo um contrato assinado — anexar de novo **substitui**, e quem substituiu passa a assinar o registro. A data que vale é a da **assinatura**, não a do upload: o papel costuma ser digitalizado dias depois.
+**"Sem contrato" é a ausência do documento**, nunca um campo: a locação vale do mesmo jeito e o sistema não bloqueia nada — o papel é a evidência que falta se ela virar cobrança judicial. O recorte da lista mostra as locações **ativas** sem papel, que é o risco que ainda dá para consertar.
 _Código_: `Contract`
 _Evitar_: termo, acordo
 

@@ -27,6 +27,13 @@ export {
   type AttributionReading,
 } from "./attribution";
 export {
+  attachContract,
+  contractFileUrl,
+  findContract,
+  type Contract,
+  type SignedUrlOptions,
+} from "./contracts";
+export {
   deleteIncident,
   findIncident,
   INCIDENT_KINDS,
