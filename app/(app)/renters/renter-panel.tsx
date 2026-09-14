@@ -19,8 +19,10 @@ import {
   type Charge,
   type Payment,
   type Rental,
+  type TrafficViolation,
 } from "@/modules/rentals";
 import { OverdueCharges, RegisteredPayments } from "../charges-block";
+import { RenterViolations } from "../violations-block";
 import { FinanceCell } from "../finance";
 import { formatCpf, formatWhatsapp, type Renter } from "@/modules/renters";
 import { liftRenterRestriction } from "./actions";
@@ -79,6 +81,7 @@ export function RenterPanel({
   charges,
   payments,
   history,
+  violations,
   vehicles,
   closeHref,
 }: {
@@ -91,6 +94,8 @@ export function RenterPanel({
   payments: Payment[];
   /** As locações que já terminaram, da mais recente para a mais antiga. */
   history: Rental[];
+  /** As infrações que caíram no período de alguma locação desta pessoa. */
+  violations: TrafficViolation[];
   /** As motos livres para uma locação nova. */
   vehicles: AvailableVehicle[];
   closeHref: string;
@@ -280,6 +285,11 @@ export function RenterPanel({
               <OverdueCharges charges={charges} />
 
               <RegisteredPayments payments={payments} />
+
+              {/* Antes do histórico de locações: o que a pessoa deve hoje vem
+                  primeiro, e a infração é dívida em aberto do mesmo jeito que
+                  a semana atrasada. */}
+              <RenterViolations violations={violations} />
 
               {history.length > 0 && (
                 <Section title="Histórico de locações">

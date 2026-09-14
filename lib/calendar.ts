@@ -81,3 +81,31 @@ export function isoMonthsAfter(date: string, months: number): string {
 
   return isoDay(alvo);
 }
+
+/**
+ * O que o gestor digitou num `<input type="datetime-local">`, como instante.
+ *
+ * "2026-09-14T14:30" não tem fuso dentro, e é justamente por isso que ele não
+ * pode ir cru para `new Date()`: no servidor isso seria 14h30 **em UTC**, que
+ * é 11h30 em Brasília. Três horas de diferença bastam para uma infração
+ * atravessar a meia-noite e mudar de dono.
+ *
+ * O que está escrito na notificação é hora de Brasília, então é assim que se
+ * lê o que foi digitado — e é o mesmo fuso que o banco usa para decidir de
+ * quem era a moto naquele dia.
+ *
+ * ponytail: `-03:00` fixo. O Brasil não tem horário de verão desde 2019; uma
+ * data anterior a isso cairia uma hora fora. Se um dia precisar valer para
+ * 2018, trocar por `Intl.DateTimeFormat` com `timeZoneName: "longOffset"`.
+ */
+export function brasiliaMoment(local: string): string {
+  // "2026-09-14T14:30" ou "2026-09-14T14:30:00" — o input varia com o browser.
+  const completo = local.length === 16 ? `${local}:00` : local;
+  const instante = new Date(`${completo}-03:00`);
+
+  if (Number.isNaN(instante.getTime())) {
+    throw new RangeError(`Instante inválido: ${local}`);
+  }
+
+  return instante.toISOString();
+}

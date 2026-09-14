@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { findVehicle, signedFileUrl } from "@/modules/fleet";
+import { vehicleViolations } from "@/modules/rentals";
+import { VehicleViolations } from "../../violations-block";
 import { StatusSelect } from "../status-select";
 import { VehicleForm } from "../vehicle-form";
 import { DiscardButton } from "./discard-button";
@@ -40,6 +42,8 @@ export default async function VehiclePage({
   // Veículo de outra locadora chega aqui como inexistente: a RLS filtrou
   // antes, e a tela não distingue os dois casos de propósito.
   if (!vehicle) notFound();
+
+  const violations = await vehicleViolations(client, vehicle.id);
 
   const paths = {
     photo: vehicle.photoPath,
@@ -94,6 +98,17 @@ export default async function VehiclePage({
 
         <div className="border-t border-border pt-6">
           <VehicleFiles id={vehicle.id} links={links} />
+        </div>
+
+        {/* As infrações vêm depois dos documentos e antes da baixa: é a ordem
+            em que a ficha se lê — o que a moto é, o que ela tem de papel, o
+            que aconteceu com ela. */}
+        <div className="border-t border-border pt-6">
+          <VehicleViolations
+            vehicleId={vehicle.id}
+            plate={vehicle.plate}
+            violations={violations}
+          />
         </div>
 
         <div className="border-t border-border pt-6">

@@ -134,6 +134,24 @@ export function formatDay(date: string): string {
   return `${dia}/${mês}/${ano}`;
 }
 
+const moment = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  // Brasília, e não o relógio de quem abre a tela. A atribuição de uma
+  // infração é decidida no banco em dia de Brasília: mostrar a hora do fuso do
+  // navegador faria a tela dizer um dia e o sistema usar outro, e é a data que
+  // decide de quem é a multa.
+  timeZone: "America/Sao_Paulo",
+});
+
+/** "14/09/2026 às 14:30", de um instante do banco, em hora de Brasília. */
+export function formatMoment(instant: string): string {
+  return moment.format(new Date(instant)).replace(", ", " às ");
+}
+
 /**
  * Como o responsável por uma restrição aparece na tela e fica registrado.
  *
