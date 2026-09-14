@@ -14,6 +14,7 @@ import { UserError } from "@/lib/user-error";
 import {
   attachVehicleFile,
   createVehicle,
+  DISCARD_REASONS,
   removeVehicle,
   removeVehicles,
   setRevisionDefault,
@@ -22,6 +23,7 @@ import {
   updateVehicle,
   VEHICLE_FILE_KINDS,
   VEHICLE_STATUSES,
+  type DiscardReason,
   type NewVehicle,
   type VehicleStatus,
 } from "@/modules/fleet";
@@ -369,7 +371,18 @@ export async function discardVehicle(
       );
     }
 
-    const removed = await removeVehicle(client, id);
+    // O motivo vem do formulário e é opcional para quem já tinha o botão:
+    // baixa sem motivo continua sendo baixa, e as anteriores a esta coluna
+    // seguem sem um. O banco recusa o valor que não está na lista.
+    const reason = optionalField(formData, "reason") as DiscardReason | null;
+    if (reason && !DISCARD_REASONS.includes(reason)) {
+      throw new UserError("Motivo de baixa inválido.", "reason");
+    }
+
+    const removed = await removeVehicle(client, id, {
+      reason: reason ?? undefined,
+      incidentId: optionalField(formData, "incidentId"),
+    });
     if (!removed) throw new UserError("Veículo não encontrado.");
   } catch (error) {
     const recado = userError(error);

@@ -14,7 +14,7 @@ import {
   recordViolation,
   renterViolations,
   vehicleViolations,
-  violationBlame,
+  whoHadIt,
   type TrafficViolation,
 } from "./index";
 
@@ -89,12 +89,12 @@ function emBrasilia(dia: string, hora: string): string {
  * borda comparam.
  */
 function culpa(violation: TrafficViolation): string {
-  const blame = violationBlame(violation);
+  const blame = whoHadIt(violation);
   return blame.kind === "renter" ? blame.name : blame.kind;
 }
 
 /**
- * A leitura de `violationBlame`, sem banco.
+ * A leitura de `whoHadIt`, sem banco.
  *
  * A view é quem decide; esta função só traduz o que ela devolveu. O que aqui
  * se prova é que nenhuma das três saídas cai na do lado.
@@ -114,7 +114,7 @@ describe("de quem é a infração", () => {
 
   it("sem locação no dia, a multa é da locadora", () => {
     expect(
-      violationBlame({
+      whoHadIt({
         ...base,
         rentalMatches: 0,
         rentalId: null,
@@ -126,7 +126,7 @@ describe("de quem é a infração", () => {
 
   it("com uma locação, é de quem estava com a moto", () => {
     expect(
-      violationBlame({
+      whoHadIt({
         ...base,
         rentalMatches: 1,
         rentalId: "l1",
@@ -143,7 +143,7 @@ describe("de quem é a infração", () => {
 
   it("com duas locações no mesmo dia, não nomeia ninguém", () => {
     expect(
-      violationBlame({
+      whoHadIt({
         ...base,
         rentalMatches: 2,
         rentalId: null,

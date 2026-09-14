@@ -71,6 +71,25 @@ const COLUMNS = "*, tenants(name)";
 const READ = "fleet";
 const WRITE = "vehicles";
 
+/**
+ * Por que uma moto saiu da frota.
+ *
+ * Quatro motivos e não um texto livre: a pergunta que este campo responde é de
+ * contagem — quantas foram vendidas, quantas viraram perda total — e texto
+ * livre transforma "vendida", "Vendida" e "venda" em três respostas.
+ *
+ * Vender é o caso comum e não aponta para nada. Perda total e roubo apontam
+ * para o sinistro que os originou, quando ele estiver registrado.
+ */
+export const DISCARD_REASONS = [
+  "sold",
+  "total_loss",
+  "stolen",
+  "other",
+] as const;
+
+export type DiscardReason = (typeof DISCARD_REASONS)[number];
+
 /** Unidade alugável da frota de uma locadora. */
 export type Vehicle = {
   id: string;
@@ -131,6 +150,18 @@ export type Vehicle = {
    * conta parte da quilometragem de cadastro.
    */
   nextRevisionKm: number;
+  /**
+   * Por que a moto saiu da frota. `null` enquanto ela está nela.
+   *
+   * Também é `null` nas baixas anteriores a esta coluna: o motivo passou a ser
+   * pedido, e reescrever o passado com um palpite seria pior que dizer que não
+   * se sabe.
+   */
+  discardReason: DiscardReason | null;
+  /** O sinistro que originou a baixa, quando ela veio de um. */
+  discardIncidentId: string | null;
+  /** Quando a moto saiu da frota. `null` enquanto ela está nela. */
+  discardedAt: string | null;
 };
 
 /**
@@ -185,6 +216,9 @@ type VehicleRow = {
   crv_path: string | null;
   created_at: string;
   revision_interval_km: number | null;
+  discard_reason: DiscardReason | null;
+  discard_incident_id: string | null;
+  deleted_at?: string | null;
   /** Só a view tem: a escrita devolve a linha da tabela. */
   idle_since?: string | null;
   current_km?: number | null;
@@ -236,6 +270,9 @@ function toVehicle(row: VehicleRow): Vehicle {
     // que aparecer errado.
     currentKm: row.current_km ?? row.mileage ?? 0,
     nextRevisionKm: row.next_revision_km ?? 0,
+    discardReason: row.discard_reason,
+    discardIncidentId: row.discard_incident_id,
+    discardedAt: row.deleted_at ?? null,
   };
 }
 
@@ -837,13 +874,18 @@ export async function fleetStatusCounts(
 export async function findVehicle(
   client: SupabaseClient,
   id: string,
+  { discarded = false } = {},
 ): Promise<Vehicle | null> {
-  const { data, error } = await client
-    .from(READ)
-    .select(COLUMNS)
-    .eq("id", id)
-    .is("deleted_at", null)
-    .maybeSingle();
+  // Moto com baixa é invisível por padrão, e é disso que dependem as recusas
+  // de Locações e Manutenção: ela não pode ser alugada nem mandada à oficina.
+  // A ficha é a única tela que pede a baixada de propósito — um link antigo,
+  // ou a placa que aparece na infração de um locatário, precisa levar a algum
+  // lugar que explique o que houve em vez de a um 404.
+  const query = client.from(READ).select(COLUMNS).eq("id", id);
+
+  const { data, error } = await (
+    discarded ? query : query.is("deleted_at", null)
+  ).maybeSingle();
 
   if (error) throw error;
   return data ? toVehicle(data as VehicleRow) : null;
@@ -943,6 +985,9 @@ export async function updateVehicle(
   return data ? toVehicle(data as VehicleRow) : null;
 }
 
+/** Por que a moto está saindo, e o sinistro que explica, quando há um. */
+export type Discard = { reason?: DiscardReason; incidentId?: string | null };
+
 /**
  * Dá baixa num lote de veículos: eles saem da frota e as linhas ficam.
  *
@@ -964,8 +1009,13 @@ export async function updateVehicle(
 export async function removeVehicles(
   client: SupabaseClient,
   ids: string[],
+  discard: Discard = {},
 ): Promise<Vehicle[]> {
   if (ids.length === 0) return [];
+
+  if (discard.reason && !DISCARD_REASONS.includes(discard.reason)) {
+    throw new UserError("Motivo de baixa inválido.", "reason");
+  }
 
   // A situação derivada vem da view: `reserved` é "tem locação ativa".
   const { data: atuais, error: readError } = await client
@@ -984,7 +1034,11 @@ export async function removeVehicles(
 
   const { data, error } = await client
     .from(WRITE)
-    .update({ deleted_at: new Date().toISOString() })
+    .update({
+      deleted_at: new Date().toISOString(),
+      discard_reason: discard.reason ?? null,
+      discard_incident_id: discard.incidentId ?? null,
+    })
     .in("id", livres)
     .is("deleted_at", null)
     .select(COLUMNS);
@@ -997,8 +1051,9 @@ export async function removeVehicles(
 export async function removeVehicle(
   client: SupabaseClient,
   id: string,
+  discard: Discard = {},
 ): Promise<Vehicle | null> {
-  const [vehicle] = await removeVehicles(client, [id]);
+  const [vehicle] = await removeVehicles(client, [id], discard);
   return vehicle ?? null;
 }
 
