@@ -7,6 +7,7 @@ import {
   MANAGER_VEHICLE_STATUSES,
   setVehicleStatus,
 } from "@/modules/fleet";
+import { monthlyCash } from "@/modules/finance";
 import { createRenter } from "@/modules/renters";
 import { endRental, openRental } from "@/modules/rentals";
 import {
@@ -307,6 +308,55 @@ describe("manutenção", () => {
     await expect(
       updateMaintenance(gestor, ordem.id, { leftOn: diasAntes(hoje, 1) }),
     ).rejects.toThrow(/antes de entrar/);
+  });
+
+  it("o custo da manutenção é a linha do caixa, e não uma segunda digitação", async () => {
+    // Não há despesa espelho: o extrato lê o custo de onde ele foi digitado.
+    // É o que garante que corrigir num lugar corrija no outro — copiar o
+    // número para `expenses` seria criar a segunda verdade.
+    // Locadora só desta conta: o caixa soma o mês inteiro, e os outros testes
+    // deste arquivo já deixaram manutenção paga na locadora compartilhada.
+    const sozinha = await createManager();
+    const moto = await novaMoto(sozinha);
+    const mês = hoje.slice(0, 7);
+
+    const semCusto = await openMaintenance(sozinha, moto.id, {
+      kind: "corrective",
+      enteredOn: hoje,
+      description: "Embreagem",
+      by: "Gestor · Locadora de teste",
+    });
+
+    // Nota que ainda não chegou não é despesa.
+    expect((await monthlyCash(sozinha, mês)).entries).toEqual([]);
+
+    await updateMaintenance(sozinha, semCusto.id, { leftOn: hoje, cost: 350 });
+
+    const comCusto = await monthlyCash(sozinha, mês);
+    expect(comCusto.entries).toMatchObject([
+      {
+        id: semCusto.id,
+        amount: 350,
+        category: "maintenance",
+        description: "Embreagem",
+        happenedOn: hoje,
+        vehicleId: moto.id,
+      },
+    ]);
+    expect(comCusto.expense).toBe(350);
+    expect(
+      comCusto.byCategory.find((c) => c.category === "maintenance")?.amount,
+    ).toBe(350);
+
+    // Corrigir o custo corrige o extrato, e não lança uma segunda linha.
+    await updateMaintenance(sozinha, semCusto.id, { cost: 400 });
+    const corrigido = await monthlyCash(sozinha, mês);
+    expect(corrigido.entries).toHaveLength(1);
+    expect(corrigido.expense).toBe(400);
+
+    // E apagar a ordem tira a linha do caixa junto.
+    await deleteMaintenance(sozinha, semCusto.id);
+    expect((await monthlyCash(sozinha, mês)).entries).toEqual([]);
   });
 
   it("apagar a ordem aberta na placa errada devolve a moto na hora", async () => {
