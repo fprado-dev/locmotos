@@ -94,11 +94,10 @@ export function RentalPanel({
         if (!aberto) router.push(closeHref);
       }}
     >
-      {/* Largura de duas colunas: a 520px o painel de uma locação encerrada
-          passava de mil pixels de altura e virava rolagem. `min()` para ele não
-          exceder a tela num notebook, e as colunas viram uma só quando não
-          couberem — quem decide é a largura do painel, não a do monitor. */}
-      <SheetContent className="w-[920px] gap-0 sm:max-w-[min(920px,92vw)]">
+      {/* A 520px este painel passava de mil pixels de altura e virava rolagem.
+          A altura cai pela largura: com espaço, cada seção deita numa linha só
+          em vez de empilhar dois a dois. `min()` para não exceder a tela. */}
+      <SheetContent className="w-[1040px] gap-0 sm:max-w-[min(1040px,94vw)]">
         {/* `pr-14` reserva o canto do X: sem isso o botão de fechar sentava em
             cima do badge de situação. */}
         <SheetHeader className="h-16 shrink-0 flex-row items-center gap-3 border-b border-border px-6 pr-14">
@@ -139,120 +138,108 @@ export function RentalPanel({
           </span>
         </SheetHeader>
 
-        {/* Duas colunas: o que é o acordo à esquerda, o que aconteceu com a
-            moto e com o dinheiro à direita. A rolagem fica como rede — uma
-            locação com dez semanas em aberto estoura qualquer altura. */}
-        <div className="@container flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pt-5 pb-6">
-          <div className="grid items-start gap-x-6 gap-y-[22px] @3xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-            <div className="flex flex-col gap-[22px]">
-              <Section title="Locatário">
-                <div className="flex items-center gap-2.5 rounded-lg border border-border px-4 py-3">
-                  <span
-                    aria-hidden
-                    className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-chip text-[11px] font-semibold text-muted-foreground"
-                  >
-                    {initials(rental.renterName)}
-                  </span>
-                  <span className="truncate text-[13px] font-medium">
-                    {rental.renterName}
-                  </span>
-                  {/* O cadastro da pessoa abre no painel dela, pela mesma URL que
+        <div className="@container flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-6 pt-5 pb-6">
+          <Section title="Locatário">
+            <div className="flex items-center gap-2.5 rounded-lg border border-border px-4 py-3">
+              <span
+                aria-hidden
+                className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-chip text-[11px] font-semibold text-muted-foreground"
+              >
+                {initials(rental.renterName)}
+              </span>
+              <span className="truncate text-[13px] font-medium">
+                {rental.renterName}
+              </span>
+              {/* O cadastro da pessoa abre no painel dela, pela mesma URL que
                   a tela de Locatários usa. */}
-                  <Link
-                    href={`/renters?open=${rental.renterId}`}
-                    className="ml-auto shrink-0 rounded-sm text-xs text-brand-text hover:underline"
-                  >
-                    Ver cadastro
-                  </Link>
-                </div>
-              </Section>
+              <Link
+                href={`/renters?open=${rental.renterId}`}
+                className="ml-auto shrink-0 rounded-sm text-xs text-brand-text hover:underline"
+              >
+                Ver cadastro
+              </Link>
+            </div>
+          </Section>
 
-              <Section title="O acordo">
-                <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                  <Datum label="Valor semanal">
+          <Section title="O acordo">
+            {/* Quantas colunas couberem de 150px: com a gaveta larga, os quatro
+                  dados do acordo deitam numa linha só em vez de empilhar dois a
+                  dois, e é daí que vem metade da altura que sobrava. */}
+            <div className="grid gap-x-5 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
+              <Datum label="Valor semanal">
+                <span className="tabular-nums">
+                  R$ {formatMoney(rental.weeklyPrice)}
+                </span>
+              </Datum>
+              <Datum label="Início">{formatDay(rental.startedOn)}</Datum>
+              <Datum label="Fidelidade">
+                {rental.commitmentMonths ? (
+                  `${rental.commitmentMonths} ${rental.commitmentMonths === 1 ? "mês" : "meses"}`
+                ) : (
+                  <span className="text-subtle">—</span>
+                )}
+              </Datum>
+              <Datum label="Caução">
+                {rental.deposit === null ? (
+                  <span className="text-subtle">—</span>
+                ) : (
+                  <span className="tabular-nums">
+                    R$ {formatMoney(rental.deposit)}
+                  </span>
+                )}
+              </Datum>
+            </div>
+          </Section>
+
+          {encerrada && (
+            <Section title="O encerramento">
+              <div className="grid gap-x-5 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
+                <Datum label="Devolvida em">{formatDay(rental.endedOn!)}</Datum>
+                <Datum label="Duração">
+                  {rentalWeeks(rental)}{" "}
+                  {rentalWeeks(rental) === 1 ? "semana" : "semanas"}
+                </Datum>
+                {rental.endedEarly && (
+                  <Datum label="Rescisão antecipada">
+                    faltavam {rental.weeksRemaining}{" "}
+                    {rental.weeksRemaining === 1 ? "semana" : "semanas"}
+                  </Datum>
+                )}
+                {rental.earlyTerminationFee !== null && (
+                  <Datum label="Cobrado na rescisão">
                     <span className="tabular-nums">
-                      R$ {formatMoney(rental.weeklyPrice)}
+                      R$ {formatMoney(rental.earlyTerminationFee)}
                     </span>
                   </Datum>
-                  <Datum label="Início">{formatDay(rental.startedOn)}</Datum>
-                  <Datum label="Fidelidade">
-                    {rental.commitmentMonths ? (
-                      `${rental.commitmentMonths} ${rental.commitmentMonths === 1 ? "mês" : "meses"}`
-                    ) : (
-                      <span className="text-subtle">—</span>
-                    )}
+                )}
+                {rental.depositReturned !== null && (
+                  <Datum label="Caução devolvida">
+                    <span className="tabular-nums">
+                      R$ {formatMoney(rental.depositReturned)}
+                    </span>
                   </Datum>
-                  <Datum label="Caução">
-                    {rental.deposit === null ? (
-                      <span className="text-subtle">—</span>
-                    ) : (
+                )}
+                {rental.depositDiscount !== null &&
+                  rental.depositDiscount > 0 && (
+                    <Datum label="Desconto na caução">
                       <span className="tabular-nums">
-                        R$ {formatMoney(rental.deposit)}
+                        R$ {formatMoney(rental.depositDiscount)}
                       </span>
-                    )}
-                  </Datum>
-                </div>
-              </Section>
-
-              {encerrada && (
-                <Section title="O encerramento">
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                    <Datum label="Devolvida em">
-                      {formatDay(rental.endedOn!)}
-                    </Datum>
-                    <Datum label="Duração">
-                      {rentalWeeks(rental)}{" "}
-                      {rentalWeeks(rental) === 1 ? "semana" : "semanas"}
-                    </Datum>
-                    {rental.endedEarly && (
-                      <Datum label="Rescisão antecipada">
-                        faltavam {rental.weeksRemaining}{" "}
-                        {rental.weeksRemaining === 1 ? "semana" : "semanas"}
-                      </Datum>
-                    )}
-                    {rental.earlyTerminationFee !== null && (
-                      <Datum label="Cobrado na rescisão">
-                        <span className="tabular-nums">
-                          R$ {formatMoney(rental.earlyTerminationFee)}
-                        </span>
-                      </Datum>
-                    )}
-                    {rental.depositReturned !== null && (
-                      <Datum label="Caução devolvida">
-                        <span className="tabular-nums">
-                          R$ {formatMoney(rental.depositReturned)}
-                        </span>
-                      </Datum>
-                    )}
-                    {rental.depositDiscount !== null &&
-                      rental.depositDiscount > 0 && (
-                        <Datum label="Desconto na caução">
-                          <span className="tabular-nums">
-                            R$ {formatMoney(rental.depositDiscount)}
-                          </span>
-                          {/* O motivo fica junto do número: um desconto sem
+                      {/* O motivo fica junto do número: um desconto sem
                           explicação é dinheiro sumindo da caução. */}
-                          <span className="block text-xs text-subtle">
-                            {rental.depositDiscountReason}
-                          </span>
-                        </Datum>
-                      )}
-                  </div>
-                </Section>
-              )}
-            </div>
+                      <span className="block text-xs text-subtle">
+                        {rental.depositDiscountReason}
+                      </span>
+                    </Datum>
+                  )}
+              </div>
+            </Section>
+          )}
+          <InspectionsBlock rentalId={rental.id} inspections={inspections} />
 
-            <div className="flex flex-col gap-[22px]">
-              <InspectionsBlock
-                rentalId={rental.id}
-                inspections={inspections}
-              />
+          <OverdueCharges charges={charges} />
 
-              <OverdueCharges charges={charges} />
-
-              <RegisteredPayments payments={payments} />
-            </div>
-          </div>
+          <RegisteredPayments payments={payments} />
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-6 py-4">
