@@ -22,13 +22,20 @@ export type VehicleStatus = (typeof VEHICLE_STATUSES)[number];
 /**
  * As situações que o gestor pode escolher à mão.
  *
- * `reserved` fica de fora porque quem a define é a locação, não o select: a
- * moto entra em reservada ao abrir uma locação e sai ao encerrá-la. Os selects
- * da tela oferecem esta lista e dizem por que a quarta não está lá.
+ * Duas ficam de fora, e pelo mesmo motivo: quem as define é um fato, não o
+ * select. `reserved` é consequência de locação ativa; `maintenance` é
+ * consequência de manutenção em aberto — a moto entra na oficina quando a
+ * ordem de serviço abre e volta quando ela fecha. Os selects da tela oferecem
+ * esta lista e dizem por que as outras duas não estão lá.
  */
+export const DERIVED_VEHICLE_STATUSES = ["reserved", "maintenance"] as const;
+
+export type DerivedVehicleStatus = (typeof DERIVED_VEHICLE_STATUSES)[number];
+
 export const MANAGER_VEHICLE_STATUSES = VEHICLE_STATUSES.filter(
-  (status) => status !== "reserved",
-) as readonly Exclude<VehicleStatus, "reserved">[];
+  (status) =>
+    !DERIVED_VEHICLE_STATUSES.includes(status as DerivedVehicleStatus),
+) as readonly Exclude<VehicleStatus, DerivedVehicleStatus>[];
 
 /** Os três anexos que um veículo tem: a foto e os dois documentos. */
 export const VEHICLE_FILE_KINDS = ["photo", "crlv", "crv"] as const;
@@ -197,21 +204,34 @@ function toVehicle(row: VehicleRow): Vehicle {
 }
 
 /**
- * Por que "Reservada" não se escolhe.
+ * Por que duas das quatro situações não se escolhem.
  *
- * Uma frase só, para a recusa ser a mesma no cadastro, na correção e no lote —
- * é a mesma regra, e três redações dela acabariam divergindo.
+ * Uma frase por situação, num lugar só, para a recusa ser a mesma no cadastro,
+ * na correção e no lote — é a mesma regra, e três redações dela acabariam
+ * divergindo.
  */
-const RESERVED_IS_DERIVED =
-  "Reservada é consequência de locação ativa: abra uma locação para a moto ficar reservada.";
+const DERIVED_STATUS_REASON: Record<DerivedVehicleStatus, string> = {
+  reserved:
+    "Reservada é consequência de locação ativa: abra uma locação para a moto ficar reservada.",
+  maintenance:
+    "Em manutenção é consequência de ordem de serviço aberta: registre a manutenção na ficha da moto.",
+};
+
+/** A situação veio do browser: só duas das quatro são escolha de alguém. */
+function refuseDerived(status: VehicleStatus | undefined) {
+  if (DERIVED_VEHICLE_STATUSES.includes(status as DerivedVehicleStatus)) {
+    throw new UserError(
+      DERIVED_STATUS_REASON[status as DerivedVehicleStatus],
+      "status",
+    );
+  }
+}
 
 function toRow(vehicle: NewVehicle) {
-  // A situação derivada não entra por escrita nenhuma. Sem esta guarda, um
-  // POST fabricado gravaria `reserved` na coluna de uma moto sem locação, e a
-  // frota passaria a mostrar reservada uma moto que ninguém alugou.
-  if (vehicle.status === "reserved") {
-    throw new UserError(RESERVED_IS_DERIVED, "status");
-  }
+  // Situação derivada não entra por escrita nenhuma. Sem esta guarda, um POST
+  // fabricado gravaria `reserved` na coluna de uma moto sem locação, e a frota
+  // passaria a mostrar reservada uma moto que ninguém alugou.
+  refuseDerived(vehicle.status);
 
   return {
     // A placa é a mesma escrita em qualquer caixa. Normalizar aqui mantém a
@@ -744,11 +764,11 @@ export async function findVehicle(
  * Um update só para o lote inteiro, e não um por id: o lote é uma decisão do
  * gestor, e meia dúzia de updates soltos poderia deixar metade aplicada.
  *
- * Duas situações não se alteram daqui, e as duas pelo mesmo motivo — quem as
- * decide é a locação, não o select: `reserved` não é um valor a escolher, e
- * moto que já está reservada só volta a mudar de situação quando a locação
- * dela for encerrada. Ela fica de fora do lote em vez de derrubá-lo inteiro, e
- * quem chamou conta ao gestor o que de fato mudou.
+ * Quem está numa situação derivada não se altera daqui, e por um motivo só:
+ * quem a decide é um fato, não o select. Moto reservada volta a mudar de
+ * situação quando a locação for encerrada; moto em manutenção, quando a ordem
+ * de serviço fechar. As duas ficam de fora do lote em vez de derrubá-lo
+ * inteiro, e quem chamou conta ao gestor o que de fato mudou.
  */
 export async function setVehiclesStatus(
   client: SupabaseClient,
@@ -757,9 +777,9 @@ export async function setVehiclesStatus(
 ): Promise<Vehicle[]> {
   if (ids.length === 0) return [];
 
-  if (status === "reserved") throw new UserError(RESERVED_IS_DERIVED, "status");
+  refuseDerived(status);
 
-  // A situação derivada vem da view; a alugada é a que sai do lote.
+  // A situação derivada vem da view; é ela que diz quem sai do lote.
   const { data: atuais, error: readError } = await client
     .from(READ)
     .select("id, status")
@@ -769,7 +789,10 @@ export async function setVehiclesStatus(
   if (readError) throw readError;
 
   const livres = (atuais as Pick<VehicleRow, "id" | "status">[])
-    .filter((row) => row.status !== "reserved")
+    .filter(
+      (row) =>
+        !DERIVED_VEHICLE_STATUSES.includes(row.status as DerivedVehicleStatus),
+    )
     .map((row) => row.id);
 
   if (livres.length === 0) return [];

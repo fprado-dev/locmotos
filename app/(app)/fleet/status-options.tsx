@@ -5,12 +5,13 @@ import { SelectItem } from "@/components/ui/select";
 import { MANAGER_VEHICLE_STATUSES } from "@/modules/fleet";
 
 /**
- * As situações que o gestor escolhe à mão — e o motivo de a quarta não estar
- * entre elas.
+ * As situações que o gestor escolhe à mão — e o motivo de as outras duas não
+ * estarem entre elas.
  *
- * "Reservada" deixou de ser escolha: ela significa "tem locação ativa" e é
- * derivada na leitura. A nota fica dentro do próprio menu porque é ali que a
- * pergunta nasce — o gestor abre o select procurando a opção que sumiu.
+ * "Reservada" significa "tem locação ativa"; "Em manutenção" significa "tem
+ * ordem de serviço aberta". As duas são derivadas na leitura, e por isso
+ * deixaram de ser escolha. A nota fica dentro do próprio menu porque é ali que
+ * a pergunta nasce — o gestor abre o select procurando a opção que sumiu.
  */
 export function StatusOptions() {
   return (
@@ -22,7 +23,8 @@ export function StatusOptions() {
       ))}
 
       <p className="mt-1 border-t border-border px-2 pt-2 pb-1 text-xs text-muted-foreground">
-        Reservada é consequência de locação ativa — abra ou encerre a locação.
+        Reservada vem da locação e Em manutenção vem da ordem de serviço — as
+        duas mudam na ficha da moto.
       </p>
     </>
   );

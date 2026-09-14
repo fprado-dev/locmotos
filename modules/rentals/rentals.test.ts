@@ -210,10 +210,10 @@ describe("abertura de locação", () => {
     ).rejects.toThrow(/inadimplência acima de 30 dias/);
   });
 
-  it("recusa moto em manutenção, dizendo em que situação ela está", async () => {
+  it("recusa moto indisponível, dizendo em que situação ela está", async () => {
     const moto = await novaMoto(gestor);
     const pessoa = await createRenter(gestor, { ...ana, cpf: "84699641008" });
-    await setVehicleStatus(gestor, moto.id, "maintenance");
+    await setVehicleStatus(gestor, moto.id, "unavailable");
 
     await expect(
       openRental(gestor, {
@@ -221,7 +221,7 @@ describe("abertura de locação", () => {
         vehicleId: moto.id,
         weeklyPrice: 300,
       }),
-    ).rejects.toThrow(/em manutenção/);
+    ).rejects.toThrow(/está indisponível/);
   });
 
   it("recusa a segunda moto para quem já está com uma", async () => {
@@ -332,7 +332,7 @@ describe("a situação reservada não se digita", () => {
 
     // Sai do lote em silêncio, como a moto de outra locadora: quem chamou
     // compara o tamanho e conta ao gestor o que de fato mudou.
-    expect(await setVehicleStatus(gestor, moto.id, "maintenance")).toBeNull();
+    expect(await setVehicleStatus(gestor, moto.id, "unavailable")).toBeNull();
     expect((await findVehicle(gestor, moto.id))?.status).toBe("reserved");
   });
 });

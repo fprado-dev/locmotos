@@ -121,7 +121,7 @@ _Código_: `deletedAt`, `removeVehicle`, `removeRenter`
 _Evitar_: exclusão, delete, arquivar, inativar
 
 **Situação**:
-Em que estado de operação um veículo está: disponível, reservada, em manutenção ou indisponível. **Reservada** significa "tem locação ativa" e é derivada na leitura — não se escolhe, acontece ao abrir uma locação e passa ao encerrá-la. As outras três são decisão do gestor, na mão.
+Em que estado de operação um veículo está: disponível, reservada, em manutenção ou indisponível. Duas são derivadas na leitura e não se escolhem: **reservada** significa "tem locação ativa" e acontece ao abrir uma locação, **em manutenção** significa "tem ordem de serviço aberta" e acontece ao registrar a manutenção; as duas passam sozinhas quando a locação encerra ou a moto sai da oficina. Restam duas na mão do gestor — disponível e indisponível —, e são só essas que o select oferece.
 _Código_: `VehicleStatus`
 _Evitar_: estado, disponibilidade, condição
 
@@ -136,8 +136,8 @@ _Código_: `Inspection`
 _Evitar_: checklist, laudo, conferência
 
 **Manutenção**:
-Intervenção técnica num veículo, preventiva ou corretiva.
-_Código_: `Maintenance`
+Intervenção técnica num veículo, **preventiva** (revisão de rotina) ou **corretiva** (algo quebrou). A linha é do veículo e traz entrada, saída, o que foi feito em texto livre, oficina, odômetro e custo. **Saída em branco é a manutenção em aberto** — é o que põe a moto em manutenção na frota, e é por isso que só pode haver **uma aberta por moto**, garantido por índice único parcial e não por `if`. Moto com locação ativa não entra na oficina, e moto na oficina não é alugada: os dois lados leem a mesma situação derivada. Dias na oficina são conta de leitura, nunca coluna: enquanto está aberta conta até hoje, fechada conta os dois extremos. Apagar existe — ordem aberta na placa errada devolve a moto à frota na hora.
+_Código_: `Maintenance`, `openMaintenance`, `daysInWorkshop`
 _Evitar_: revisão, reparo, ordem de serviço
 
 ## Risco
