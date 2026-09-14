@@ -16,9 +16,9 @@ const MODULOS = [
 /**
  * A navegação entre módulos.
  *
- * Locações e Financeiro ainda não existem como rota. Eles aparecem porque a
- * lista de módulos é o mapa do produto, e esconder o que vem depois faria o
- * gestor descobrir o sistema por partes.
+ * Os quatro existem como rota. A lista continua sendo o mapa do produto: o que
+ * entrar depois aparece aqui antes de estar pronto, porque esconder o que vem
+ * a seguir faria o gestor descobrir o sistema por partes.
  */
 export function Nav() {
   const pathname = usePathname();

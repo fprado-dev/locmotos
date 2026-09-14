@@ -20,6 +20,7 @@ export {
   setVehiclesStatus,
   signedFileUrl,
   updateVehicle,
+  vehiclePlates,
   VEHICLE_FILE_KINDS,
   VEHICLE_SORTS,
   VEHICLE_STATUSES,

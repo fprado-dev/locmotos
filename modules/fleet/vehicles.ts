@@ -602,6 +602,33 @@ export type AvailableVehicle = {
 };
 
 /**
+ * Só a placa de cada moto da frota, para um seletor.
+ *
+ * Todas, e não só as disponíveis: a moto que ganha despesa é justamente a que
+ * está em manutenção. Fora ficam as que levaram baixa — despesa de moto
+ * vendida não se lança hoje.
+ */
+export async function vehiclePlates(
+  client: SupabaseClient,
+): Promise<Array<{ id: string; plate: string; model: string }>> {
+  const { data, error } = await client
+    .from(READ)
+    .select("id, plate, brand, model")
+    .is("deleted_at", null)
+    .order("plate", { ascending: true });
+
+  if (error) throw error;
+
+  return (data as Pick<VehicleRow, "id" | "plate" | "brand" | "model">[]).map(
+    (row) => ({
+      id: row.id,
+      plate: row.plate,
+      model: `${row.brand} ${row.model}`,
+    }),
+  );
+}
+
+/**
  * As motos que estão livres para entrar numa locação agora.
  *
  * Vem inteira e sem paginar, ao contrário de `listVehicles`: é uma lista para
