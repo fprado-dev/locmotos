@@ -1,4 +1,5 @@
 import type { VehicleStatus } from "@/modules/fleet";
+import type { ExpenseCategory } from "@/modules/finance";
 
 /**
  * O nome de cada situação na tela.
@@ -56,6 +57,21 @@ export function vehicleColor(color: string | null): string {
 
   return (nome && HEX_BY_NAME[nome]) || "var(--subtle)";
 }
+
+/**
+ * O nome de cada categoria de despesa na tela.
+ *
+ * Vocabulário de interface, não de banco — e um só, para o formulário e o
+ * resumo por categoria não divergirem.
+ */
+export const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
+  maintenance: "Manutenção",
+  licensing: "Licenciamento",
+  insurance: "Seguro",
+  fine: "Multa",
+  fuel: "Combustível",
+  other: "Outros",
+};
 
 const integer = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 
@@ -115,6 +131,17 @@ const fullDate = new Intl.DateTimeFormat("pt-BR", {
  */
 export function formatMonthYear(moment: string): string {
   return monthYear.format(new Date(moment)).replace(/\.?\s+de\s+/, " ");
+}
+
+const monthName = new Intl.DateTimeFormat("pt-BR", {
+  month: "long",
+  year: "numeric",
+});
+
+/** "setembro de 2026", de um mês escrito como "2026-09". */
+export function formatMonth(month: string): string {
+  const [ano, mês] = month.split("-").map(Number);
+  return monthName.format(new Date(ano, mês - 1, 1));
 }
 
 /** "10 de março de 2025", de um instante do banco. */

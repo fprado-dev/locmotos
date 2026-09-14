@@ -83,6 +83,24 @@ export function isoMonthsAfter(date: string, months: number): string {
 }
 
 /**
+ * Hoje em Brasília, como "YYYY-MM-DD".
+ *
+ * `isoDay(new Date())` dá o dia do relógio de quem executa — no browser de um
+ * gestor brasileiro é o certo, mas no servidor é UTC, onde às 21h já é
+ * amanhã. É a mesma correção que `public.today_br()` faz do lado do banco, e
+ * serve a tudo que o servidor precisa datar sem perguntar ao Postgres.
+ */
+export function brasiliaDay(now = new Date()): string {
+  // `en-CA` formata em ISO, que é como o resto do sistema escreve data.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/**
  * O que o gestor digitou num `<input type="datetime-local">`, como instante.
  *
  * "2026-09-14T14:30" não tem fuso dentro, e é justamente por isso que ele não

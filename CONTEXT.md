@@ -95,7 +95,7 @@ _Código_: `DelinquencyPolicy`
 _Evitar_: política de cobrança, fluxo de cobrança
 
 **Recebimento** / **Despesa**:
-Dinheiro que entra e dinheiro que sai do caixa da locadora.
+Dinheiro que entra e dinheiro que sai do caixa da locadora. **Recebimento não é tabela**: todo dinheiro que entra na v1 entrou quitando uma cobrança, e o pagamento já é o fato — espelhá-lo numa segunda tabela criaria duas verdades que divergem no primeiro estorno. Despesa é fato novo, com dia, valor, o que foi, uma **categoria de lista fechada** e, opcionalmente, a moto a que se refere. O recorte do caixa é o **mês**, e não a semana do ciclo: o locatário paga por semana e a locadora fecha as contas por mês. **Caução fica de fora** dos dois lados — é dinheiro que está com a locadora e não é dela, e somá-lo faria o saldo mentir duas vezes. O valor de uma infração também não é despesa até ser pago; quando for, é lançado como qualquer outra saída.
 _Código_: `Income` / `Expense`
 _Evitar_: entrada, saída — ambíguos com a entrada de um financiamento
 
