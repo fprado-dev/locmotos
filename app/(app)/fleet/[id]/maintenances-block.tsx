@@ -31,6 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { kmUntilRevision, revisionAlert } from "@/modules/fleet";
 import {
   daysInWorkshop,
   workshopDays,
@@ -405,6 +407,67 @@ function Row({
 }
 
 /**
+ * Em que quilômetro cai a próxima revisão, e quanto falta.
+ *
+ * Fica no topo do bloco de manutenções porque é a pergunta que traz o gestor
+ * aqui: registrar uma preventiva é o que empurra este número para a frente.
+ * Nada disso é coluna — a conta é feita na leitura, sobre a maior leitura de
+ * odômetro que alguém anotou.
+ */
+function RevisionLine({
+  currentKm,
+  nextRevisionKm,
+}: {
+  currentKm: number;
+  nextRevisionKm: number;
+}) {
+  const alert = revisionAlert({ currentKm, nextRevisionKm });
+  const km = kmUntilRevision({ currentKm, nextRevisionKm });
+
+  if (!currentKm) {
+    return (
+      <p className="rounded-lg border border-input bg-surface-2 px-4 py-3 text-[13px] text-muted-foreground">
+        Sem quilometragem anotada — a revisão só tem como ser calculada depois
+        que alguém registrar o odômetro, no cadastro ou numa vistoria.
+      </p>
+    );
+  }
+
+  return (
+    <p
+      className={cn(
+        "flex flex-wrap items-baseline gap-x-2 rounded-lg border px-4 py-3 text-[13px]",
+        alert === "overdue"
+          ? "border-late/30 bg-late/5"
+          : alert === "due-soon"
+            ? "border-soon-fg/30 bg-soon-bg"
+            : "border-input bg-surface-2",
+      )}
+    >
+      <span className="font-medium">
+        Próxima revisão em {formatInteger(nextRevisionKm)} km
+      </span>
+      <span
+        className={cn(
+          alert === "overdue"
+            ? "font-semibold text-late"
+            : alert === "due-soon"
+              ? "font-medium text-soon-fg"
+              : "text-muted-foreground",
+        )}
+      >
+        {alert === "overdue"
+          ? `venceu há ${formatInteger(-km)} km`
+          : `faltam ${formatInteger(km)} km`}
+      </span>
+      <span className="text-muted-foreground">
+        · a moto está com {formatInteger(currentKm)} km
+      </span>
+    </p>
+  );
+}
+
+/**
  * As manutenções de uma moto, e a porta que tira e devolve ela da frota.
  *
  * O bloco não é só histórico: é o **único** lugar em que a moto entra e sai da
@@ -420,12 +483,15 @@ export function VehicleMaintenances({
   plate,
   maintenances,
   today,
+  revision,
 }: {
   vehicleId: string;
   plate: string;
   maintenances: Maintenance[];
   /** Hoje em Brasília, resolvido no servidor. */
   today: string;
+  /** As duas leituras de quilometragem que a view já resolveu. */
+  revision: { currentKm: number; nextRevisionKm: number };
 }) {
   const [abrindo, setAbrindo] = useState(false);
   const [editando, setEditando] = useState<Maintenance | null>(null);
@@ -450,6 +516,8 @@ export function VehicleMaintenances({
           </Button>
         )}
       </div>
+
+      <RevisionLine {...revision} />
 
       {aberta && (
         <p className="flex items-center gap-2 rounded-lg border border-input bg-surface-2 px-4 py-3 text-[13px]">

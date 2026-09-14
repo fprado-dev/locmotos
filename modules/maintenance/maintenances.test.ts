@@ -4,7 +4,12 @@ import { isoDay } from "@/lib/calendar";
 import {
   createVehicle,
   findVehicle,
+  fleetSummary,
+  kmUntilRevision,
   MANAGER_VEHICLE_STATUSES,
+  revisionAlert,
+  revisionDefault,
+  setRevisionDefault,
   setVehicleStatus,
 } from "@/modules/fleet";
 import { monthlyCash } from "@/modules/finance";
@@ -397,5 +402,163 @@ describe("manutenção", () => {
         by: "Gestor · Outra",
       }),
     ).rejects.toThrow(/não encontrada/i);
+  });
+});
+
+/**
+ * A revisão por quilometragem.
+ *
+ * Nada aqui é coluna: o intervalo é da locadora (com exceção por moto), a
+ * quilometragem de hoje é a maior leitura que alguém anotou, e a próxima
+ * revisão é a soma das duas coisas. O teste existe porque a conta mora na
+ * view, e uma conta em SQL que ninguém exercita é uma conta que ninguém sabe
+ * se está certa.
+ */
+describe("revisão por quilometragem", () => {
+  let gestor: SupabaseClient;
+  let hoje: string;
+
+  beforeAll(async () => {
+    gestor = await createManager();
+    hoje = await hojeNoBanco(gestor);
+  });
+
+  it("conta a partir da última preventiva, e o padrão é o da locadora", async () => {
+    expect(await revisionDefault(gestor)).toBe(5000);
+
+    // Sem preventiva registrada, a conta parte do cadastro: a moto entrou com
+    // 10.000 km, então a primeira revisão é aos 15.000.
+    const moto = await createVehicle(gestor, {
+      plate: plate(),
+      brand: "Honda",
+      model: "CG 160",
+      year: 2024,
+      mileage: 10_000,
+    });
+
+    const nova = await findVehicle(gestor, moto.id);
+    expect(nova).toMatchObject({ currentKm: 10_000, nextRevisionKm: 15_000 });
+    expect(revisionAlert(nova!)).toBeNull();
+
+    // A preventiva empurra a conta para a frente, e o odômetro dela passa a
+    // ser a leitura mais alta.
+    const ordem = await openMaintenance(gestor, moto.id, {
+      kind: "preventive",
+      enteredOn: hoje,
+      description: "Revisão dos 14.800",
+      odometer: 14_800,
+      by: "Gestor · Locadora de teste",
+    });
+    await updateMaintenance(gestor, ordem.id, { leftOn: hoje });
+
+    const depois = await findVehicle(gestor, moto.id);
+    expect(depois).toMatchObject({
+      currentKm: 14_800,
+      nextRevisionKm: 19_800,
+    });
+    expect(revisionAlert(depois!)).toBeNull();
+  });
+
+  it("avisa antes de estourar, e depois de estourar", async () => {
+    // Intervalo próprio: esta moto roda em aplicativo e vai à oficina antes
+    // das outras. É o campo da ficha, não o padrão da locadora.
+    const moto = await createVehicle(gestor, {
+      plate: plate(),
+      brand: "Honda",
+      model: "CG 160",
+      year: 2024,
+      mileage: 20_000,
+      revisionIntervalKm: 3_000,
+    });
+
+    expect(await findVehicle(gestor, moto.id)).toMatchObject({
+      revisionIntervalKm: 3_000,
+      nextRevisionKm: 23_000,
+    });
+
+    // Dentro da folga de 500 km: âmbar.
+    const vencendo = await openMaintenance(gestor, moto.id, {
+      kind: "corrective",
+      enteredOn: hoje,
+      description: "Pneu",
+      odometer: 22_600,
+      by: "Gestor · Locadora de teste",
+    });
+    await updateMaintenance(gestor, vencendo.id, { leftOn: hoje });
+
+    const perto = await findVehicle(gestor, moto.id);
+    expect(perto?.currentKm).toBe(22_600);
+    expect(revisionAlert(perto!)).toBe("due-soon");
+    expect(kmUntilRevision(perto!)).toBe(400);
+
+    // Passou: vermelho. Corretiva não zera a conta — só a preventiva zera.
+    const passou = await openMaintenance(gestor, moto.id, {
+      kind: "corrective",
+      enteredOn: hoje,
+      description: "Corrente",
+      odometer: 23_900,
+      by: "Gestor · Locadora de teste",
+    });
+    await updateMaintenance(gestor, passou.id, { leftOn: hoje });
+
+    const vencida = await findVehicle(gestor, moto.id);
+    expect(revisionAlert(vencida!)).toBe("overdue");
+    expect(kmUntilRevision(vencida!)).toBe(-900);
+
+    expect((await fleetSummary(gestor)).revisionOverdue).toBe(1);
+  });
+
+  it("trocar o padrão da locadora move quem herda, e só quem herda", async () => {
+    const própria = await createManager();
+    const herdeira = await createVehicle(própria, {
+      plate: plate(),
+      brand: "Honda",
+      model: "CG 160",
+      year: 2024,
+      mileage: 1_000,
+    });
+    const exceção = await createVehicle(própria, {
+      plate: plate(),
+      brand: "Honda",
+      model: "CG 160",
+      year: 2024,
+      mileage: 1_000,
+      revisionIntervalKm: 2_000,
+    });
+
+    expect((await findVehicle(própria, herdeira.id))?.nextRevisionKm).toBe(
+      6_000,
+    );
+    expect((await findVehicle(própria, exceção.id))?.nextRevisionKm).toBe(
+      3_000,
+    );
+
+    expect(await setRevisionDefault(própria, 10_000)).toBe(10_000);
+
+    expect((await findVehicle(própria, herdeira.id))?.nextRevisionKm).toBe(
+      11_000,
+    );
+    // A exceção não se move: ela tem número próprio.
+    expect((await findVehicle(própria, exceção.id))?.nextRevisionKm).toBe(
+      3_000,
+    );
+
+    await expect(setRevisionDefault(própria, 0)).rejects.toThrow(
+      /maior que zero/,
+    );
+  });
+
+  it("não deixa a locadora vizinha mexer no intervalo da outra", async () => {
+    const vizinha = await createManager();
+    const minha = await createManager();
+
+    await setRevisionDefault(minha, 7_000);
+
+    // A RLS recorta o update pela locadora do JWT: a vizinha só alcança a
+    // própria linha, e a de quem está do lado continua onde estava.
+    await setRevisionDefault(vizinha, 8_000);
+
+    expect(await revisionDefault(minha)).toBe(7_000);
+    expect(await revisionDefault(vizinha)).toBe(8_000);
   });
 });

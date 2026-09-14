@@ -95,7 +95,7 @@ _Código_: `DelinquencyPolicy`
 _Evitar_: política de cobrança, fluxo de cobrança
 
 **Recebimento** / **Despesa**:
-Dinheiro que entra e dinheiro que sai do caixa da locadora. **Recebimento não é tabela**: todo dinheiro que entra na v1 entrou quitando uma cobrança, e o pagamento já é o fato — espelhá-lo numa segunda tabela criaria duas verdades que divergem no primeiro estorno. Despesa é fato novo, com dia, valor, o que foi, uma **categoria de lista fechada** e, opcionalmente, a moto a que se refere. O recorte do caixa é o **mês**, e não a semana do ciclo: o locatário paga por semana e a locadora fecha as contas por mês. **Caução fica de fora** dos dois lados — é dinheiro que está com a locadora e não é dela, e somá-lo faria o saldo mentir duas vezes. O valor de uma infração também não é despesa até ser pago; quando for, é lançado como qualquer outra saída.
+Dinheiro que entra e dinheiro que sai do caixa da locadora. **Recebimento não é tabela**: todo dinheiro que entra na v1 entrou quitando uma cobrança, e o pagamento já é o fato — espelhá-lo numa segunda tabela criaria duas verdades que divergem no primeiro estorno. Despesa é fato novo, com dia, valor, o que foi, uma **categoria de lista fechada** e, opcionalmente, a moto a que se refere. O recorte do caixa é o **mês**, e não a semana do ciclo: o locatário paga por semana e a locadora fecha as contas por mês. **Caução fica de fora** dos dois lados — é dinheiro que está com a locadora e não é dela, e somá-lo faria o saldo mentir duas vezes. O valor de uma infração também não é despesa até ser pago; quando for, é lançado como qualquer outra saída. **O custo de uma manutenção já é despesa e não se digita duas vezes**: o extrato lê o número da própria ordem de serviço, com a data da saída da oficina — corrigi-lo lá corrige o caixa, e apagar a ordem tira a linha.
 _Código_: `Income` / `Expense`
 _Evitar_: entrada, saída — ambíguos com a entrada de um financiamento
 
@@ -139,6 +139,11 @@ _Evitar_: checklist, laudo, conferência
 Intervenção técnica num veículo, **preventiva** (revisão de rotina) ou **corretiva** (algo quebrou). A linha é do veículo e traz entrada, saída, o que foi feito em texto livre, oficina, odômetro e custo. **Saída em branco é a manutenção em aberto** — é o que põe a moto em manutenção na frota, e é por isso que só pode haver **uma aberta por moto**, garantido por índice único parcial e não por `if`. Moto com locação ativa não entra na oficina, e moto na oficina não é alugada: os dois lados leem a mesma situação derivada. Dias na oficina são conta de leitura, nunca coluna: enquanto está aberta conta até hoje, fechada conta os dois extremos. Apagar existe — ordem aberta na placa errada devolve a moto à frota na hora.
 _Código_: `Maintenance`, `openMaintenance`, `daysInWorkshop`
 _Evitar_: revisão, reparo, ordem de serviço
+
+**Intervalo de revisão**:
+De quantos em quantos quilômetros uma moto vai à revisão preventiva. É **da locadora**, com exceção por moto: a frota inteira costuma seguir um número só, e a moto que roda mais é a exceção que se digita na ficha. Não existe coluna "próxima revisão" — ela é o odômetro da última preventiva mais o intervalo, e a quilometragem de hoje é a **maior leitura** que alguém anotou: cadastro, vistoria de devolução ou entrada na oficina. A maior e não a mais recente, porque odômetro não anda para trás. Três estados, como o licenciamento: em dia, vencendo dentro da folga, vencida. Só manutenção **preventiva** zera a conta; corretiva não é revisão.
+_Código_: `revisionIntervalKm`, `nextRevisionKm`, `revisionAlert`
+_Evitar_: próxima revisão (como campo), plano de revisão
 
 ## Risco
 

@@ -827,6 +827,11 @@ describe("os números da frota", () => {
       unavailable: 2,
       licensingDueSoon: 1,
       licensingOverdue: 1,
+      // Nenhuma destas cinco tem quilometragem anotada: sem leitura, a régua
+      // da revisão não tem o que dizer — e moto recém-cadastrada nascendo com
+      // a revisão vencida é o jeito mais rápido de o gestor ignorar o selo.
+      revisionDueSoon: 0,
+      revisionOverdue: 0,
       availableWeeklyPrice: 320,
     });
   });

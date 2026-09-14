@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { brasiliaDay } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/server";
-import { findVehicle, signedFileUrl } from "@/modules/fleet";
+import { findVehicle, revisionDefault, signedFileUrl } from "@/modules/fleet";
 import { vehicleMaintenances } from "@/modules/maintenance";
 import { vehicleViolations } from "@/modules/rentals";
 import { VehicleViolations } from "../../violations-block";
@@ -46,9 +46,10 @@ export default async function VehiclePage({
   // antes, e a tela não distingue os dois casos de propósito.
   if (!vehicle) notFound();
 
-  const [violations, maintenances] = await Promise.all([
+  const [violations, maintenances, intervalo] = await Promise.all([
     vehicleViolations(client, vehicle.id),
     vehicleMaintenances(client, vehicle.id),
+    revisionDefault(client),
   ]);
 
   const paths = {
@@ -100,7 +101,7 @@ export default async function VehiclePage({
       </header>
 
       <div className="flex flex-1 flex-col gap-6 overflow-auto px-8 py-6">
-        <VehicleForm vehicle={vehicle} />
+        <VehicleForm vehicle={vehicle} revisionDefault={intervalo} />
 
         <div className="border-t border-border pt-6">
           <VehicleFiles id={vehicle.id} links={links} />
@@ -116,6 +117,10 @@ export default async function VehiclePage({
             plate={vehicle.plate}
             maintenances={maintenances}
             today={brasiliaDay()}
+            revision={{
+              currentKm: vehicle.currentKm,
+              nextRevisionKm: vehicle.nextRevisionKm,
+            }}
           />
         </div>
 

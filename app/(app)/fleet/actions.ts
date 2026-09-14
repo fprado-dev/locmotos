@@ -16,6 +16,7 @@ import {
   createVehicle,
   removeVehicle,
   removeVehicles,
+  setRevisionDefault,
   setVehicleStatus,
   setVehiclesStatus,
   updateVehicle,
@@ -113,6 +114,15 @@ function vehicleFromForm(formData: FormData): NewVehicle {
     ),
     purchaseDate: optionalField(formData, "purchaseDate"),
     notes: optionalField(formData, "notes"),
+    // Em branco é herdar o intervalo da locadora, e por isso o campo é
+    // opcional em vez de vir preenchido com o padrão: um número copiado para
+    // dentro da moto deixaria de acompanhar a locadora quando ela mudasse.
+    revisionIntervalKm: optionalNumber(
+      formData,
+      "revisionIntervalKm",
+      "Intervalo de revisão",
+      { max: 9_999_999, integer: true },
+    ),
   };
 }
 
@@ -415,5 +425,39 @@ export async function attachVehicleFiles(
   }
 
   revalidatePath("/fleet");
+  return {};
+}
+
+/**
+ * Troca o intervalo de revisão padrão da locadora.
+ *
+ * Revalida `/fleet` inteiro porque o número entra na conta de toda moto que
+ * herda: um card, uma lista e todas as fichas mudam de uma vez.
+ */
+export async function saveRevisionDefault(
+  _previous: { error?: string },
+  formData: FormData,
+): Promise<{ error?: string }> {
+  const km = optionalNumber(
+    formData,
+    "revisionIntervalKm",
+    "Intervalo de revisão",
+    { max: 9_999_999, integer: true },
+  );
+
+  try {
+    if (km === null) throw new UserError("Diga de quantos em quantos km.");
+
+    const client = await createClient();
+    await setRevisionDefault(client, km);
+  } catch (error) {
+    const recado = userError(error);
+    if (recado) return recado;
+
+    console.error("Falha ao salvar o intervalo de revisão", error);
+    return { error: "Não foi possível salvar o intervalo de revisão." };
+  }
+
+  revalidatePath("/fleet", "layout");
   return {};
 }
