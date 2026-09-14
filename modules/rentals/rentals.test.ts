@@ -417,6 +417,9 @@ describe("a lista de Locações e os chips de Locatários", () => {
       // Ninguém aqui passou do vencimento: as locações nasceram agora, e o
       // primeiro ciclo só vence daqui a seis dias.
       overdue: 0,
+      // As duas estão rodando sem papel assinado: nenhum teste deste arquivo
+      // anexa contrato, e o recorte conta exatamente a ausência dele.
+      "no-contract": 2,
       activeWeeklyPrice: 720,
       overdueAmount: 0,
     });

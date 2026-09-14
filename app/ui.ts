@@ -219,3 +219,31 @@ export function formatMoment(instant: string): string {
 export function managerLabel(tenantName: string | null | undefined): string {
   return `Gestor · ${tenantName ?? "locadora"}`;
 }
+
+/**
+ * O arquivo dá para mostrar na tela, ou só para baixar?
+ *
+ * Miniatura de PDF o browser não faz sozinho; imagem ele faz. Uma regra só
+ * porque a ficha da moto e o contrato da locação fazem a mesma pergunta.
+ */
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|gif|avif)$/i;
+
+export function isImage(path: string): boolean {
+  return IMAGE_EXTENSIONS.test(path);
+}
+
+/** A extensão do caminho, para o download sair com nome de arquivo. */
+export function extension(path: string): string {
+  const match = path.match(/\.[a-z0-9]+$/i);
+  return match ? match[0] : "";
+}
+
+/**
+ * Quanto vale uma URL assinada de arquivo.
+ *
+ * Cinco minutos: o tempo de olhar a miniatura, decidir e clicar em baixar.
+ * Depois disso o endereço não serve para mais ninguém, que é o ponto de ser
+ * assinada. Vale para documento de moto e para contrato de locação — é a mesma
+ * decisão, e duas cópias dela divergiriam na primeira mudança.
+ */
+export const FILE_SECONDS = 300;

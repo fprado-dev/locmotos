@@ -21,6 +21,7 @@ import {
 } from "@/modules/rentals";
 import { OverdueCharges, RegisteredPayments } from "../charges-block";
 import { EndRentalDialog } from "./end-rental-dialog";
+import { ContractBlock, type ContractLink } from "./contract-block";
 import { InspectionsBlock } from "./inspection";
 
 /** Um título de seção do painel. */
@@ -73,6 +74,7 @@ export function RentalPanel({
   charges,
   payments,
   inspections,
+  contract,
   closeHref,
 }: {
   rental: Rental;
@@ -82,6 +84,8 @@ export function RentalPanel({
   payments: Payment[];
   /** O estado da moto nas duas pontas, quando alguém anotou. */
   inspections: Inspections;
+  /** O papel assinado, já com as URLs. `null` é "sem contrato". */
+  contract: ContractLink | null;
   closeHref: string;
 }) {
   const router = useRouter();
@@ -239,6 +243,14 @@ export function RentalPanel({
               </div>
             </Section>
           )}
+          {/* Antes das vistorias: o contrato é o que dá evidência ao acordo,
+              e a ausência dele é o que esta tela precisa gritar. */}
+          <ContractBlock
+            rentalId={rental.id}
+            startedOn={rental.startedOn}
+            contract={contract}
+          />
+
           <InspectionsBlock rentalId={rental.id} inspections={inspections} />
 
           <OverdueCharges charges={charges} />

@@ -86,6 +86,15 @@ export type Rental = {
   depositDiscount: number | null;
   depositDiscountReason: string | null;
   depositReturned: number | null;
+  /**
+   * Quando o contrato desta locação foi assinado. `null` é "sem contrato".
+   *
+   * Ausência de linha em `contracts`, e não uma coluna `has_contract` que
+   * alguém esqueceria de atualizar — a mesma forma de "em aberto" para
+   * cobrança. Vem na view para virar recorte da lista sem uma consulta por
+   * linha.
+   */
+  contractSignedOn: string | null;
 };
 
 /**
@@ -127,6 +136,7 @@ type RentalRow = {
   deposit_discount: number | string | null;
   deposit_discount_reason: string | null;
   deposit_returned: number | string | null;
+  contract_signed_on: string | null;
 };
 
 /**
@@ -173,6 +183,7 @@ function toRental(row: RentalRow): Rental {
     depositDiscount: toAmount(row.deposit_discount),
     depositDiscountReason: row.deposit_discount_reason,
     depositReturned: toAmount(row.deposit_returned),
+    contractSignedOn: row.contract_signed_on,
   };
 }
 
@@ -627,8 +638,17 @@ export const RENTALS_PER_PAGE = 20;
  * pode estar ativa e devendo ao mesmo tempo. Continua sendo chip porque chip
  * aqui é recorte, não estado: o gestor pergunta "me mostra quem deve", e a
  * resposta cruza as duas outras.
+ *
+ * "Sem contrato" é o mesmo tipo de recorte, e só sobre as **ativas**: locação
+ * encerrada sem papel é problema que já passou, e misturá-la aqui faria o
+ * número crescer com o que ninguém vai mais resolver.
  */
-export const RENTAL_SITUATIONS = ["active", "ended", "overdue"] as const;
+export const RENTAL_SITUATIONS = [
+  "active",
+  "ended",
+  "overdue",
+  "no-contract",
+] as const;
 
 export type RentalSituation = (typeof RENTAL_SITUATIONS)[number];
 
@@ -737,6 +757,12 @@ function filtered<T extends Filterable>(
     // banco, excluir os adimplentes depois de paginar faria a paginação
     // mentir sobre quantos são.
     if (filters.situation === "overdue") atual = atual.gt("overdue_amount", 0);
+    // Ativa e sem papel assinado. As duas condições juntas porque o recorte
+    // responde "o que está rodando agora sem contrato" — o risco que ainda dá
+    // para consertar.
+    if (filters.situation === "no-contract") {
+      atual = atual.is("ended_on", null).is("contract_signed_on", null);
+    }
   }
 
   return atual as T;
@@ -824,6 +850,14 @@ export type RentalCounts = {
   active: number;
   ended: number;
   overdue: number;
+  /**
+   * Ativas sem contrato assinado.
+   *
+   * A chave é a do recorte, com hífen e tudo: a tela indexa o contador pelo
+   * mesmo valor que põe na URL, e um segundo nome aqui abriria a porta para o
+   * chip mostrar o número de outro filtro.
+   */
+  "no-contract": number;
   activeWeeklyPrice: number;
   overdueAmount: number;
 };
@@ -834,7 +868,7 @@ export async function rentalCounts(
 ): Promise<RentalCounts> {
   const query = client
     .from(READ)
-    .select("ended_on, weekly_price, overdue_amount");
+    .select("ended_on, weekly_price, overdue_amount, contract_signed_on");
 
   const { data, error } = await filtered(query, filters, {
     skipSituation: true,
@@ -844,13 +878,14 @@ export async function rentalCounts(
 
   const rows = data as Pick<
     RentalRow,
-    "ended_on" | "weekly_price" | "overdue_amount"
+    "ended_on" | "weekly_price" | "overdue_amount" | "contract_signed_on"
   >[];
   const counts: RentalCounts = {
     all: rows.length,
     active: 0,
     ended: 0,
     overdue: 0,
+    "no-contract": 0,
     activeWeeklyPrice: 0,
     overdueAmount: 0,
   };
@@ -859,6 +894,7 @@ export async function rentalCounts(
     if (row.ended_on === null) {
       counts.active += 1;
       counts.activeWeeklyPrice += toAmount(row.weekly_price) ?? 0;
+      if (row.contract_signed_on === null) counts["no-contract"] += 1;
     } else {
       counts.ended += 1;
     }

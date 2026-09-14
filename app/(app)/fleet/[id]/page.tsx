@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { extension, FILE_SECONDS, isImage } from "@/app/ui";
 import { buttonVariants } from "@/components/ui/button";
 import { brasiliaDay } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/server";
@@ -13,28 +14,6 @@ import { VehicleForm } from "../vehicle-form";
 import { DiscardButton } from "./discard-button";
 import { VehicleFiles } from "./vehicle-files";
 import { VehicleMaintenances } from "./maintenances-block";
-
-/**
- * Quanto vale uma URL assinada desta tela.
- *
- * Era um minuto, o bastante para desenhar. Agora ela também é o que o botão de
- * baixar usa, e ninguém clica em baixar no primeiro segundo: cinco minutos é o
- * tempo de olhar a miniatura, decidir e clicar. Depois disso o endereço não
- * serve para mais ninguém, que é o ponto de ser assinada.
- */
-const FILE_SECONDS = 300;
-
-const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|gif|avif)$/i;
-
-function isImage(path: string): boolean {
-  return IMAGE_EXTENSIONS.test(path);
-}
-
-/** A extensão guardada no caminho, para o download sair com nome de arquivo. */
-function extension(path: string): string {
-  const match = path.match(/\.[a-z0-9]+$/i);
-  return match ? match[0] : "";
-}
 
 export default async function VehiclePage({
   params,

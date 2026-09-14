@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { formatDay, formatInteger, formatMoney, initials } from "@/app/ui";
+import {
+  extension,
+  FILE_SECONDS,
+  formatDay,
+  formatInteger,
+  formatMoney,
+  initials,
+  isImage,
+} from "@/app/ui";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -19,6 +27,8 @@ import {
   findRental,
   listRentals,
   overdueCharges,
+  contractFileUrl,
+  findContract,
   rentalInspections,
   rentalPayments,
   rentalCounts,
@@ -43,6 +53,7 @@ const SITUATION_LABELS: Record<RentalSituation, string> = {
   active: "Ativas",
   ended: "Encerradas",
   overdue: "Inadimplentes",
+  "no-contract": "Sem contrato",
 };
 
 /** O que veio na URL é texto de fora: só passa o que dá para usar. */
@@ -290,6 +301,7 @@ export default async function RentalsPage({
     emAberto,
     pagos,
     vistorias,
+    contrato,
   ] = await Promise.all([
     listRentals(client, filters),
     // Sem filtro: os cards são da locadora inteira, e não podem mudar porque
@@ -309,7 +321,31 @@ export default async function RentalsPage({
     aberto
       ? rentalInspections(client, aberto)
       : { handover: null, return: null },
+    // O papel assinado, quando existe. `null` é "sem contrato", que é
+    // justamente o que o painel precisa dizer em voz alta.
+    aberto ? findContract(client, aberto) : null,
   ]);
+
+  // As duas URLs do contrato: ver na tela e guardar no computador são dois
+  // pedidos diferentes, e quem separa os dois é o cabeçalho que o Storage
+  // devolve — assinado junto com o endereço, que vence em minutos.
+  const [view, download] = contrato
+    ? await Promise.all([
+        contractFileUrl(client, contrato.filePath, { seconds: FILE_SECONDS }),
+        contractFileUrl(client, contrato.filePath, {
+          seconds: FILE_SECONDS,
+          download: `contrato-${aberta?.vehicle.plate ?? "locacao"}${extension(contrato.filePath)}`,
+        }),
+      ])
+    : [null, null];
+
+  const contractLink = contrato && {
+    view,
+    download,
+    image: isImage(contrato.filePath),
+    signedOn: contrato.signedOn,
+    by: contrato.by,
+  };
 
   // O contador do chip responde "quantas sobrariam se eu clicasse aqui": a
   // busca mexe nos números, e sem busca é a mesma conta dos cards.
@@ -558,6 +594,7 @@ export default async function RentalsPage({
           charges={emAberto}
           payments={pagos}
           inspections={vistorias}
+          contract={contractLink}
           closeHref={href(filters, { open: undefined })}
         />
       )}
