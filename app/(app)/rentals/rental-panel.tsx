@@ -96,8 +96,12 @@ export function RentalPanel({
     >
       {/* A 520px este painel passava de mil pixels de altura e virava rolagem.
           A altura cai pela largura: com espaço, cada seção deita numa linha só
-          em vez de empilhar dois a dois. `min()` para não exceder a tela. */}
-      <SheetContent className="w-[1040px] gap-0 sm:max-w-[min(1040px,94vw)]">
+          em vez de empilhar dois a dois.
+
+          Largura e teto em duas classes, e não um `min(1040px,94vw)`: uma
+          classe arbitrária com vírgula dentro não chega a ser gerada pelo
+          Tailwind, e some sem erro nenhum. */}
+      <SheetContent className="w-[1040px] max-w-[94vw] gap-0 sm:max-w-[94vw]">
         {/* `pr-14` reserva o canto do X: sem isso o botão de fechar sentava em
             cima do badge de situação. */}
         <SheetHeader className="h-16 shrink-0 flex-row items-center gap-3 border-b border-border px-6 pr-14">
