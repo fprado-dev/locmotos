@@ -11,10 +11,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signUp } from "../actions";
 
+/** O que deu errado, em português — o mesmo mapa que o login tem. */
+const ERROS: Record<string, string> = {
+  envio:
+    "Não conseguimos enviar o e-mail agora. Tente de novo em alguns minutos.",
+};
+
 export default async function SignUpPage({
   searchParams,
 }: PageProps<"/signup">) {
-  const { enviado } = await searchParams;
+  const { enviado, erro } = await searchParams;
 
   return (
     <Card className="w-full max-w-sm">
@@ -27,6 +33,12 @@ export default async function SignUpPage({
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
+        {typeof erro === "string" && ERROS[erro] && (
+          <p role="alert" className="text-sm text-destructive">
+            {ERROS[erro]}
+          </p>
+        )}
+
         {enviado ? (
           <p className="text-sm text-muted-foreground">
             Enviamos um link para o seu e-mail. Abra no mesmo navegador em que

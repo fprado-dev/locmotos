@@ -11,6 +11,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { signIn } from "../actions";
 
+/**
+ * O que deu errado, em português.
+ *
+ * Um mapa e não um `if`: cada motivo que a Server Action sabe devolver precisa
+ * ter frase, senão a pessoa fica olhando para uma tela que não explica nada.
+ */
+const ERROS: Record<string, string> = {
+  link: "Esse link não vale mais. Peça outro abaixo.",
+  "sem-conta":
+    "Não há conta com esse e-mail. Cadastre a sua locadora para começar.",
+  envio:
+    "Não conseguimos enviar o e-mail agora. Tente de novo em alguns minutos.",
+};
+
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { enviado, erro } = await searchParams;
 
@@ -24,9 +38,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
-        {erro && (
+        {typeof erro === "string" && ERROS[erro] && (
           <p role="alert" className="text-sm text-destructive">
-            Esse link não vale mais. Peça outro abaixo.
+            {ERROS[erro]}
           </p>
         )}
 
