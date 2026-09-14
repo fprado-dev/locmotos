@@ -15,10 +15,13 @@ import { createClient } from "@/lib/supabase/server";
  * `token_hash` é o link que nasceu fora deste navegador: gerado pela Admin API,
  * ou aberto no celular depois de pedido no computador. Não depende de cookie
  * nenhum, e é o formato que o Supabase documenta para link de e-mail no App
- * Router. Sem ele, "abra no mesmo navegador em que pediu" deixa de ser um
- * aviso e vira uma regra que o produto não explica.
+ * Router.
  *
- * Cada link serve uma vez só — usado ou vencido cai no login.
+ * **Link gasto com sessão em pé não é erro.** Cada link serve uma vez só, e
+ * clicar de novo — recarregar a aba, voltar no histórico, o scanner do provedor
+ * de e-mail ter passado antes — devolvia "esse link não vale mais" para quem já
+ * estava logado. Quem já entrou quer a frota, não um aviso sobre o papel que o
+ * levou até lá.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -27,17 +30,23 @@ export async function GET(request: NextRequest) {
   const type = params.get("type") as EmailOtpType | null;
 
   const client = await createClient();
+  const dentro = NextResponse.redirect(new URL("/fleet", request.url));
 
   if (code) {
     const { error } = await client.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(new URL("/fleet", request.url));
+    if (!error) return dentro;
   } else if (tokenHash && type) {
     const { error } = await client.auth.verifyOtp({
       type,
       token_hash: tokenHash,
     });
-    if (!error) return NextResponse.redirect(new URL("/fleet", request.url));
+    if (!error) return dentro;
   }
+
+  // O link não valeu. Se a sessão vale, o destino é o mesmo: quem chegou aqui
+  // logado já passou por um link que funcionou.
+  const { data } = await client.auth.getClaims();
+  if (data?.claims) return dentro;
 
   return NextResponse.redirect(new URL("/login?erro=link", request.url));
 }
