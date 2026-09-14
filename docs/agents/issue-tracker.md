@@ -13,6 +13,18 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+## Granularidade: uma issue por comportamento, não por rota
+
+Uma área do produto — Financeiro, Manutenção, Sinistro — **não é uma issue**. Ela é o guarda-chuva de várias, e escrevê-la inteira num ticket só tem três custos:
+
+- **O backlog fica vazio.** Cada área entregue apaga a única linha que existia, e não sobra nada para escolher, priorizar ou pegar em paralelo.
+- **O PR fica grande demais para discordar dele.** Migration, módulo, ações e três telas no mesmo diff: quem revisa aceita ou rejeita o pacote, e não a decisão que discorda.
+- **O escopo é decidido por quem escreve, e não por quem usa.** "Fora do escopo" vira uma lista no fim do ticket em vez de uma issue que alguém pode priorizar amanhã.
+
+A unidade certa é **um comportamento que o gestor consegue descrever**: "registrar uma manutenção", "a moto entra em manutenção pela ordem de serviço", "avisar antes de a revisão estourar". Cada uma vira um PR que se lê de uma sentada.
+
+Na prática, ao abrir trabalho numa área nova: escreva a issue de entrada — a que cria a tabela e o caminho mínimo —, e **ao mesmo tempo** as que a seguem, com `Depende de #N` no topo. As dependentes ficam só com `enhancement`; `ready-for-agent` é para o que já dá para começar hoje.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
