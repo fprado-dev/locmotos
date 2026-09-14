@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { formatDay, formatInteger, initials } from "@/app/ui";
+import { formatDay, formatInteger, formatMoney, initials } from "@/app/ui";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -234,7 +234,7 @@ function RentalRow({
       </TableCell>
 
       <TableCell className={cn(CELL, "text-right tabular-nums")}>
-        {formatInteger(rental.weeklyPrice)}
+        {formatMoney(rental.weeklyPrice)}
       </TableCell>
 
       <TableCell className={cn(CELL, "tabular-nums")}>
@@ -389,7 +389,7 @@ export default async function RentalsPage({
           <SummaryCard
             label="Receita semanal contratada"
             prefix="R$"
-            value={formatInteger(cards.activeWeeklyPrice)}
+            value={formatMoney(cards.activeWeeklyPrice)}
             note="Soma do valor semanal das ativas"
           />
         </section>

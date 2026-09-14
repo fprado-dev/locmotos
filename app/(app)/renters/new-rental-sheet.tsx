@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { formatInteger } from "@/app/ui";
+import { formatMoney } from "@/app/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -240,7 +240,7 @@ export function NewRentalSheet({
                       </span>
                       {vehicle.weeklyPrice !== null && (
                         <span className="ml-2 text-subtle tabular-nums">
-                          R$ {formatInteger(vehicle.weeklyPrice)}/sem
+                          R$ {formatMoney(vehicle.weeklyPrice)}/sem
                         </span>
                       )}
                     </SelectItem>

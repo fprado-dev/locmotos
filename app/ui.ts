@@ -64,6 +64,27 @@ export function formatInteger(value: number): string {
   return integer.format(value);
 }
 
+const cents = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/**
+ * Valor em reais: sem perder centavo, e sem inventar zero onde não há.
+ *
+ * `formatInteger` não serve para dinheiro desde que a última semana de uma
+ * locação passou a ser rateada: R$ 128,57 virava "R$ 129" na tela, e número de
+ * dinheiro que não bate com o do banco é o tipo de erro que o gestor descobre
+ * discutindo com o locatário.
+ *
+ * Ou zero casas ou duas, nunca uma: R$ 128,50 é "128,50" e não "128,5". Quem
+ * decide é o valor — a maioria dos preços é redonda, e "R$ 300,00" em toda
+ * linha da lista é ruído que não diz nada.
+ */
+export function formatMoney(value: number): string {
+  return Number.isInteger(value) ? integer.format(value) : cents.format(value);
+}
+
 /** As iniciais de um nome, para o avatar que substitui a foto que não há. */
 export function initials(name: string): string {
   return name

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { formatDay, formatFullDate, formatInteger, initials } from "@/app/ui";
+import { formatDay, formatFullDate, formatMoney, initials } from "@/app/ui";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -243,7 +243,7 @@ export function RenterPanel({
                     <div className="grid grid-cols-3 gap-3 px-4 py-3">
                       <Datum label="Semana">
                         <span className="tabular-nums">
-                          R$ {formatInteger(rental.weeklyPrice)}
+                          R$ {formatMoney(rental.weeklyPrice)}
                         </span>
                       </Datum>
                       <Datum label="Início">
@@ -262,7 +262,7 @@ export function RenterPanel({
                       <div className="border-t border-border px-4 py-3">
                         <Datum label="Caução">
                           <span className="tabular-nums">
-                            R$ {formatInteger(rental.deposit)}
+                            R$ {formatMoney(rental.deposit)}
                           </span>
                         </Datum>
                       </div>

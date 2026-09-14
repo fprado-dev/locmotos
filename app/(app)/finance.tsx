@@ -1,4 +1,4 @@
-import { formatInteger } from "@/app/ui";
+import { formatMoney } from "@/app/ui";
 import { Badge } from "@/components/ui/badge";
 import { delinquency } from "@/modules/rentals";
 
@@ -39,7 +39,7 @@ export function FinanceCell({
 
   return (
     <Badge
-      title={`R$ ${formatInteger(atraso.amount)} em aberto`}
+      title={`R$ ${formatMoney(atraso.amount)} em aberto`}
       className="h-auto rounded-md bg-late px-[9px] py-1 text-xs font-semibold text-white"
     >
       Atrasado {atraso.days} d
